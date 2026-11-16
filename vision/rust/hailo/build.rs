@@ -12,6 +12,8 @@ fn hailort() {
     let link_dir = std::env::var("HAILORT_LINK_DIR").expect("HAILORT_LINK_DIR is unset");
     println!("cargo:rustc-link-search=native={link_dir}");
     println!("cargo:rustc-link-lib=dylib=hailort");
+    // The program is linked again against a rebuilt library, whose soname carries its version.
+    println!("cargo:rerun-if-changed={link_dir}/libhailort.so");
 
     let bindings = bindgen::Builder::default()
         .clang_arg(format!("-I{include_dir}"))
@@ -21,6 +23,8 @@ fn hailort() {
         .allowlist_var("HAILO_.*")
         .prepend_enum_name(false)
         .layout_tests(false)
+        // The bindings are generated again when a header they include changes.
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .expect("bindgen failed on hailo/hailort.h");
 

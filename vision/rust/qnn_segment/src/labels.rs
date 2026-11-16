@@ -46,8 +46,11 @@ mod tests {
 
     #[test]
     fn quantised_scores_rank_as_their_values() {
-        let (scale, zero_point) = (0.20315f32, 153i32);
-        let value = |q: u8| (i32::from(q) - zero_point) as f32 * scale;
+        let quantisation = qnn::Quantisation {
+            scale: 0.20315,
+            offset: -153,
+        };
+        let value = |q: u8| quantisation.real(q);
         let cells: [[u8; 4]; 4] = [
             [152, 150, 140, 151],
             [100, 154, 153, 0],

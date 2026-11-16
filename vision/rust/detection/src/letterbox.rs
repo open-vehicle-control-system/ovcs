@@ -13,16 +13,24 @@ pub struct Letterbox {
     pub offset_x: i32,
     /// Top padding, in model px.
     pub offset_y: i32,
+    /// Side of the model's square input, in px.
+    pub model_size: i32,
+    /// The caller frame's size, in px.
+    pub caller_width: i32,
+    pub caller_height: i32,
 }
 
-/// Fit `width`x`height` into a `model`-sized square, centred.
-pub fn letterbox_for(width: i32, height: i32, model: i32) -> Letterbox {
-    let scale = (model as f32 / width as f32).min(model as f32 / height as f32);
+/// Fit `width`x`height` into a square of side `model_size`, centred.
+pub fn letterbox_for(width: i32, height: i32, model_size: i32) -> Letterbox {
+    let scale = (model_size as f32 / width as f32).min(model_size as f32 / height as f32);
     let (scaled_width, scaled_height) = scaled_size(width, height, scale);
     Letterbox {
         scale,
-        offset_x: (model - scaled_width) / 2,
-        offset_y: (model - scaled_height) / 2,
+        offset_x: (model_size - scaled_width) / 2,
+        offset_y: (model_size - scaled_height) / 2,
+        model_size,
+        caller_width: width,
+        caller_height: height,
     }
 }
 
@@ -33,37 +41,56 @@ fn scaled_size(width: i32, height: i32, scale: f32) -> (i32, i32) {
     )
 }
 
-/// A caller frame: `width` × `height` pixels of 1 (grey) or 3 (RGB) channels.
+/// A caller frame: `width` × `height` pixels of `channels`.
+#[derive(Debug, PartialEq)]
 pub struct Frame<'a> {
     pub pixels: &'a [u8],
     pub width: i32,
     pub height: i32,
-    pub channels: u8,
+    pub channels: Channels,
 }
 
-/// Bilinear resize of `frame` into `destination`, a `model`x`model` RGB buffer padded with
-/// 114, YOLO's conventional letterbox fill. The output rows are split into up to `threads`
-/// bands, with the same output whatever their count.
+/// The samples of a caller frame's pixel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Channels {
+    Grey,
+    Rgb,
+}
+
+impl Channels {
+    /// Samples a pixel.
+    pub fn samples(self) -> usize {
+        match self {
+            Channels::Grey => 1,
+            Channels::Rgb => 3,
+        }
+    }
+}
+
+/// Bilinear resize of `frame` into `destination`, a `model_size`x`model_size` RGB buffer
+/// padded with 114, YOLO's conventional letterbox fill. The output rows are split into up to
+/// `threads` bands, with the same output whatever their count.
 pub fn letterbox_into(
     frame: &Frame,
     destination: &mut [u8],
-    model: i32,
     letterbox: &Letterbox,
     threads: usize,
 ) {
-    let model_px = model as usize;
-    destination[..model_px * model_px * 3].fill(PAD_VALUE);
+    let model_size = letterbox.model_size as usize;
+    destination[..model_size * model_size * 3].fill(PAD_VALUE);
     match frame.channels {
-        1 => resize_into::<1>(frame, destination, model_px, letterbox, threads),
-        _ => resize_into::<3>(frame, destination, model_px, letterbox, threads),
+        Channels::Grey => {
+            resize_image_area::<1>(frame, destination, model_size, letterbox, threads)
+        }
+        Channels::Rgb => resize_image_area::<3>(frame, destination, model_size, letterbox, threads),
     }
 }
 
 /// The letterbox's image area, from `frame`'s `CHANNELS`-sample pixels.
-fn resize_into<const CHANNELS: usize>(
+fn resize_image_area<const CHANNELS: usize>(
     frame: &Frame,
     destination: &mut [u8],
-    model_px: usize,
+    model_size: usize,
     letterbox: &Letterbox,
     threads: usize,
 ) {
@@ -71,14 +98,14 @@ fn resize_into<const CHANNELS: usize>(
     let to_pixels = |samples: f32| samples / letterbox.scale;
     let columns = bilinear::taps(scaled_width as usize, frame.width as usize, to_pixels);
     let rows = bilinear::taps(scaled_height as usize, frame.height as usize, to_pixels);
-    let start = (letterbox.offset_y as usize * model_px + letterbox.offset_x as usize) * 3;
+    let start = (letterbox.offset_y as usize * model_size + letterbox.offset_x as usize) * 3;
     bilinear::resize_into::<CHANNELS>(
         frame.pixels,
         frame.width as usize,
         &columns,
         &rows,
         &mut destination[start..],
-        model_px * 3,
+        model_size * 3,
         threads,
     );
 }
@@ -102,6 +129,31 @@ mod tests {
                 "{got:?} != {want:?}"
             );
         }
+    }
+
+    /// `pixels`, `width` × `height` of `channels`, letterboxed into a square of side
+    /// `model_size` on `threads` threads.
+    fn letterboxed(
+        pixels: &[u8],
+        (width, height): (i32, i32),
+        channels: Channels,
+        model_size: i32,
+        threads: usize,
+    ) -> Vec<u8> {
+        let letterbox = letterbox_for(width, height, model_size);
+        let mut destination = vec![0u8; (model_size * model_size * 3) as usize];
+        letterbox_into(
+            &Frame {
+                pixels,
+                width,
+                height,
+                channels,
+            },
+            &mut destination,
+            &letterbox,
+            threads,
+        );
+        destination
     }
 
     fn pixel(destination: &[u8], model: i32, x: i32, y: i32) -> [u8; 3] {
@@ -147,19 +199,7 @@ mod tests {
         let source = vec![200u8; (width * height * 3) as usize];
         let letterbox = letterbox_for(width, height, model);
         assert_eq!((letterbox.offset_x, letterbox.offset_y), (0, 2));
-        let mut destination = vec![0u8; (model * model * 3) as usize];
-        letterbox_into(
-            &Frame {
-                pixels: &source,
-                width,
-                height,
-                channels: 3,
-            },
-            &mut destination,
-            model,
-            &letterbox,
-            1,
-        );
+        let destination = letterboxed(&source, (width, height), Channels::Rgb, model, 1);
         for y in 0..model {
             let want = if (2..6).contains(&y) { 200 } else { 114 };
             for x in 0..model {
@@ -170,63 +210,22 @@ mod tests {
 
     #[test]
     fn gray_is_replicated_to_rgb() {
-        let source = [10u8, 10, 10, 10];
-        let letterbox = letterbox_for(2, 2, 2);
-        let mut destination = [0u8; 12];
-        letterbox_into(
-            &Frame {
-                pixels: &source,
-                width: 2,
-                height: 2,
-                channels: 1,
-            },
-            &mut destination,
-            2,
-            &letterbox,
-            1,
-        );
+        let destination = letterboxed(&[10, 10, 10, 10], (2, 2), Channels::Grey, 2, 1);
         assert_eq!(destination, [10; 12]);
     }
 
     #[test]
     fn rgb_is_copied_as_is() {
-        let source = [1u8, 2, 3];
-        let letterbox = letterbox_for(1, 1, 1);
-        let mut destination = [0u8; 3];
-        letterbox_into(
-            &Frame {
-                pixels: &source,
-                width: 1,
-                height: 1,
-                channels: 3,
-            },
-            &mut destination,
-            1,
-            &letterbox,
-            1,
-        );
+        let destination = letterboxed(&[1, 2, 3], (1, 1), Channels::Rgb, 1, 1);
         assert_eq!(destination, [1, 2, 3]);
     }
 
     #[test]
     fn bilinear_upscale_samples_pixel_centres() {
         // 2x1 gray [0, 100] upscaled x2: centres at -0.25, 0.25, 0.75, 1.25 source px.
-        let source = [0u8, 100];
         let letterbox = letterbox_for(2, 1, 4);
         assert_eq!((letterbox.offset_x, letterbox.offset_y), (0, 1));
-        let mut destination = vec![0u8; 4 * 4 * 3];
-        letterbox_into(
-            &Frame {
-                pixels: &source,
-                width: 2,
-                height: 1,
-                channels: 1,
-            },
-            &mut destination,
-            4,
-            &letterbox,
-            1,
-        );
+        let destination = letterboxed(&[0, 100], (2, 1), Channels::Grey, 4, 1);
         let row: Vec<u8> = (0..4).map(|x| pixel(&destination, 4, x, 1)[0]).collect();
         assert_eq!(row, [0, 25, 75, 100]);
     }
@@ -255,30 +254,22 @@ mod tests {
     fn the_letterboxed_images_keep_their_digests_on_one_to_four_threads() {
         for threads in 1..=4 {
             let digests: Vec<u64> = [
-                (1014, 760, 3, 640),
-                (1014, 760, 1, 640),
-                (37, 23, 3, 64),
-                (100, 200, 3, 64),
-                (5, 3, 1, 16),
+                (1014, 760, Channels::Rgb, 640),
+                (1014, 760, Channels::Grey, 640),
+                (37, 23, Channels::Rgb, 64),
+                (100, 200, Channels::Rgb, 64),
+                (5, 3, Channels::Grey, 16),
             ]
             .iter()
             .map(|&(width, height, channels, model)| {
-                let source = noise((width * height) as usize * usize::from(channels));
-                let letterbox = letterbox_for(width, height, model);
-                let mut destination = vec![0u8; (model * model * 3) as usize];
-                letterbox_into(
-                    &Frame {
-                        pixels: &source,
-                        width,
-                        height,
-                        channels,
-                    },
-                    &mut destination,
+                let source = noise((width * height) as usize * channels.samples());
+                digest(&letterboxed(
+                    &source,
+                    (width, height),
+                    channels,
                     model,
-                    &letterbox,
                     threads,
-                );
-                digest(&destination)
+                ))
             })
             .collect();
             assert_eq!(

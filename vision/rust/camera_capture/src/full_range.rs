@@ -60,8 +60,8 @@ impl Expansion {
     ) -> [&[u8]; 3] {
         let (chroma_width, chroma_height) = chroma_size(width, height);
         let [y, u, v] = &mut self.planes;
-        map_plane(&self.luma, y, planes[0], width, height, strides[0]);
-        map_plane(
+        expand_plane(&self.luma, y, planes[0], width, height, strides[0]);
+        expand_plane(
             &self.chroma,
             u,
             planes[1],
@@ -69,7 +69,7 @@ impl Expansion {
             chroma_height,
             strides[1],
         );
-        map_plane(
+        expand_plane(
             &self.chroma,
             v,
             planes[2],
@@ -90,7 +90,7 @@ pub fn chroma_size(width: usize, height: usize) -> (usize, usize) {
 ///
 /// Each row is copied before it is mapped: the camera's buffer is not cached, so reading it a
 /// byte at a time costs a memory access per byte, where a copy reads it in wide loads.
-fn map_plane(
+fn expand_plane(
     table: &[u8; 256],
     out: &mut Vec<u8>,
     plane: &[u8],

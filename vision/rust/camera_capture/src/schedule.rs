@@ -9,6 +9,10 @@
 
 const NS_PER_S: f64 = 1e9;
 
+/// The lowest `max_hz` above 0: its interval and a capture time, each at most
+/// half of `i64::MAX`, add up without overflowing.
+pub const MIN_MAX_HZ: f64 = NS_PER_S / (i64::MAX / 2) as f64;
+
 pub struct Schedule {
     /// `None` takes every frame.
     interval_ns: Option<i64>,
@@ -17,10 +21,11 @@ pub struct Schedule {
 }
 
 impl Schedule {
-    /// At most `max_hz` frames a second, 0 for every frame, of a camera at `fps`.
-    pub fn new(max_hz: f64, fps: u32) -> Schedule {
+    /// At most `max_hz` frames a second, from `MIN_MAX_HZ`, of a camera at
+    /// `fps`; every frame without `max_hz`.
+    pub fn new(max_hz: Option<f64>, fps: u32) -> Schedule {
         Schedule {
-            interval_ns: (max_hz > 0.0).then(|| (NS_PER_S / max_hz).round() as i64),
+            interval_ns: max_hz.map(|max_hz| (NS_PER_S / max_hz).round() as i64),
             slack_ns: 3 * 1_000_000_000 / (4 * i64::from(fps.max(1))),
             next_due_ns: None,
         }
@@ -75,7 +80,7 @@ mod tests {
             .collect()
     }
 
-    fn taken_ns(max_hz: f64, captures_ns: &[i64]) -> Vec<i64> {
+    fn taken_ns(max_hz: Option<f64>, captures_ns: &[i64]) -> Vec<i64> {
         let mut schedule = Schedule::new(max_hz, 30);
         (captures_ns.iter().copied())
             .filter(|capture_ns| schedule.take_if_due(*capture_ns))
@@ -86,13 +91,13 @@ mod tests {
     fn at_half_the_cameras_rate_takes_every_other_frame_whatever_their_jitter() {
         let captures_ns = jittered_ns(12);
         let every_other: Vec<i64> = captures_ns.iter().copied().step_by(2).collect();
-        assert_eq!(taken_ns(15.0, &captures_ns), every_other);
+        assert_eq!(taken_ns(Some(15.0), &captures_ns), every_other);
     }
 
     #[test]
     fn takes_max_hz_frames_a_second_of_the_cameras_29_97_whatever_their_jitter() {
         for (max_hz, tolerance) in [(10.0, 1), (15.0, 1), (20.0, 2), (25.0, 2)] {
-            let taken = taken_ns(max_hz, &measured_rate_ns()).len() as i64;
+            let taken = taken_ns(Some(max_hz), &measured_rate_ns()).len() as i64;
             let expected = (max_hz * 10.0) as i64;
             assert!(
                 (taken - expected).abs() <= tolerance,
@@ -102,10 +107,10 @@ mod tests {
     }
 
     #[test]
-    fn at_the_cameras_rate_or_0_takes_every_frame() {
+    fn at_the_cameras_rate_or_uncapped_takes_every_frame() {
         let captures_ns = measured_rate_ns();
-        assert_eq!(taken_ns(30.0, &captures_ns), captures_ns);
-        assert_eq!(taken_ns(0.0, &captures_ns), captures_ns);
+        assert_eq!(taken_ns(Some(30.0), &captures_ns), captures_ns);
+        assert_eq!(taken_ns(None, &captures_ns), captures_ns);
     }
 
     #[test]
@@ -114,7 +119,7 @@ mod tests {
             unreachable!()
         };
         assert_eq!(
-            taken_ns(15.0, &[1_000_000_000, first, second, third, fourth]),
+            taken_ns(Some(15.0), &[1_000_000_000, first, second, third, fourth]),
             [1_000_000_000, first, third]
         );
     }
@@ -129,7 +134,7 @@ mod tests {
             captures_ns[7],
         ];
         assert_eq!(
-            taken_ns(15.0, &after_a_gap),
+            taken_ns(Some(15.0), &after_a_gap),
             [captures_ns[0], captures_ns[5], captures_ns[7]]
         );
     }

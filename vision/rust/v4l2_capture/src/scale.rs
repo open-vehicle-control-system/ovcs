@@ -131,18 +131,12 @@ fn average_rows(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::xorshift;
 
     // Noise, so that no two blocks are alike.
     fn noise(length: usize) -> Vec<u8> {
-        let mut state = 0x9e37_79b9u32;
-        (0..length)
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                state as u8
-            })
-            .collect()
+        let mut next = xorshift(0x9e37_79b9);
+        (0..length).map(|_| next() as u8).collect()
     }
 
     // Each pixel's channels averaged over its block, one pixel at a time.

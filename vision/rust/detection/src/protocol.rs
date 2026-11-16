@@ -5,6 +5,8 @@
 //! Detections: u8 tag 1, u32 sequence, u16 count, count × {u16 class_id, f32 score, x0, y0,
 //! x1, y1}, then a u32 inference time in µs when the frame was inferred, absent otherwise.
 
+use crate::letterbox::{Channels, Frame};
+
 pub const TAG_DETECT: u8 = 1;
 pub const TAG_DETECT_JPEG: u8 = 3;
 const TAG_DETECTIONS: u8 = 1;
@@ -64,23 +66,27 @@ pub fn parse_request(record: &[u8]) -> Option<Request<'_>> {
     })
 }
 
-impl Request<'_> {
-    /// The channel count, the size and the pixel byte count; `Err` is the message to log
-    /// before answering with no detections.
-    pub fn check(&self) -> Result<(), String> {
-        if self.channels != 1 && self.channels != 3 {
-            return Err(format!(
-                "frame {}: unsupported channel count {}",
-                self.sequence, self.channels
-            ));
-        }
+impl<'a> Request<'a> {
+    /// The image the request carries, once its channel count, size and pixel byte count are
+    /// checked; `Err` is the message to log before answering with no detections.
+    pub fn check(&self) -> Result<Frame<'a>, String> {
+        let channels = match self.channels {
+            1 => Channels::Grey,
+            3 => Channels::Rgb,
+            other => {
+                return Err(format!(
+                    "frame {}: unsupported channel count {other}",
+                    self.sequence
+                ))
+            }
+        };
         if self.width == 0 || self.height == 0 {
             return Err(format!(
                 "frame {}: a {}x{} image has no pixels",
                 self.sequence, self.width, self.height
             ));
         }
-        let expected = self.width as usize * self.height as usize * self.channels as usize;
+        let expected = self.width as usize * self.height as usize * channels.samples();
         if self.pixels.len() != expected {
             return Err(format!(
                 "frame {}: expected {} pixel bytes, got {}",
@@ -89,7 +95,12 @@ impl Request<'_> {
                 self.pixels.len()
             ));
         }
-        Ok(())
+        Ok(Frame {
+            pixels: self.pixels,
+            width: i32::from(self.width),
+            height: i32::from(self.height),
+            channels,
+        })
     }
 }
 
@@ -173,7 +184,15 @@ mod tests {
                 pixels: &[1, 2, 3, 4, 5, 6]
             }
         );
-        assert_eq!(got.check(), Ok(()));
+        assert_eq!(
+            got.check(),
+            Ok(Frame {
+                pixels: &[1, 2, 3, 4, 5, 6],
+                width: 2,
+                height: 1,
+                channels: Channels::Rgb
+            })
+        );
     }
 
     #[test]
@@ -217,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn detections_record_matches_cpp_layout() {
+    fn detections_record_is_the_header_and_each_detection() {
         let detection = Detection {
             class_id: 0x0102,
             score: 0.5,

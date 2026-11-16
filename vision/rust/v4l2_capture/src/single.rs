@@ -16,17 +16,17 @@ use crate::arguments::{Format, OutputSpec, SingleArguments};
 use crate::bayer::{RawFrame, Tone};
 use crate::cpus;
 use crate::encoder::{Encoder, H264Settings, M2mEncoder};
+use crate::exposure::{auto_exposure, retarget, Exposure};
 use crate::h264::{self, EncodedVideo};
 use crate::jpeg::{self, Encoded};
 use crate::plan::{Plan, Sent};
 use crate::processor::Development;
-use crate::sensor::{self, SensorModel};
+use crate::sensor::{FrameTiming, SensorCrop, SensorModel};
 use crate::settings::ColourSettings;
 use crate::v4l2;
 use crate::white_balance::{self, Gains};
 use crate::{
-    auto_exposure, auto_exposure_from, capped_now, input, open_camera, pollfd, resume_point,
-    EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, EXPOSURE_MARGIN_LINES, STATISTICS_EVERY_S,
+    input, open_camera, poll, pollfd, EXPOSURE_EVERY_FRAMES, POLL_TIMEOUT, STATISTICS_EVERY_S,
 };
 
 /// Captures the camera `arguments` names at its full sensor size until the
@@ -46,44 +46,51 @@ pub fn run(
             &format!("running on every CPU, the slowest kept: {error}"),
         ),
     }
-    let model = SensorModel::for_sensor(&arguments.camera.sensor);
+    let model = arguments.camera.model;
     let encoders = start_encoders(arguments, log)?;
     let camera = open_camera(&arguments.camera, sensor_width, sensor_height)?;
     let sensor = &camera.sensor;
+    // The crop only maps the shading grid: without it the grid spans the frame.
+    let sensor_crop = sensor.sensor_crop().unwrap_or_else(|error| {
+        log(
+            LogLevel::Warning,
+            &format!("sensor crop unread, shading spans the frame: {error}"),
+        );
+        None
+    });
 
-    let hblank = sensor.control(v4l2::CID_HBLANK)?;
-    let pixel_rate = sensor.control64(v4l2::CID_PIXEL_RATE)?;
-    let line_ns = sensor::line_ns(sensor_width, hblank as u32, pixel_rate as u64);
-    let (vblank_min, vblank_max) = sensor.control_range(v4l2::CID_VBLANK)?;
-    let frame_lines = (1e9 / f64::from(arguments.fps) / line_ns).round() as i32;
-    let vblank = (frame_lines - sensor_height as i32).clamp(vblank_min, vblank_max);
-    let period_ns = (f64::from(sensor_height as i32 + vblank) * line_ns).round() as i64;
+    let sensor_size = (sensor_width, sensor_height);
+    let timing = FrameTiming::read(sensor, sensor, sensor_size, arguments.fps)?;
     let gain_range = sensor.control_range(v4l2::CID_ANALOGUE_GAIN)?;
-    let frame_us = period_ns as f64 / 1_000.0;
-    let max_exposure_lines = sensor_height as i32 + vblank - EXPOSURE_MARGIN_LINES;
-    let set_exposure = |exposure_us: f64, gain: f64| -> io::Result<(f64, f64)> {
-        let lines = ((exposure_us * 1_000.0 / line_ns).round() as i32).clamp(1, max_exposure_lines);
-        let code = model.gain_code(gain, gain_range.0, gain_range.1);
+    let frame_us = timing.frame_us();
+    let set_exposure = |exposure: Exposure| -> io::Result<Exposure> {
+        let lines = timing.exposure_lines(exposure.exposure_us);
+        let code = model.gain_code(exposure.gain, gain_range.0, gain_range.1);
         sensor.set_control(v4l2::CID_EXPOSURE, lines)?;
         sensor.set_control(v4l2::CID_ANALOGUE_GAIN, code)?;
-        Ok((f64::from(lines) * line_ns / 1_000.0, model.gain(code)))
+        Ok(Exposure {
+            exposure_us: timing.exposure_us(lines),
+            gain: model.gain(code),
+        })
     };
-    sensor.set_control(v4l2::CID_VBLANK, vblank)?;
+    sensor.set_control(v4l2::CID_VBLANK, timing.vblank)?;
 
     let settings = arguments.settings.clone();
-    writer.write_record(&exposure_record(
-        set_exposure(
-            f64::from(settings.capture.exposure_us),
-            settings.capture.analogue_gain,
-        )?,
-        0,
-    ))?;
+    let applied = set_exposure(settings.capture.manual_exposure())?;
+    writer.write_record(&applied.record(0))?;
     log(
         LogLevel::Info,
         &format!(
-            "{sensor_width}x{sensor_height} {:?} to {:?}, line {line_ns:.1} ns, \
-             vblank {vblank}, period {period_ns} ns, {settings:?}",
-            camera.capture.layout, arguments.outputs
+            "{sensor_width}x{sensor_height} {:?} to {:?}, {}, line {:.1} ns, \
+             vblank {}, period {} ns, {settings:?}",
+            camera.capture.layout,
+            arguments.outputs,
+            sensor_crop.map_or("no sensor crop".to_string(), |crop| format!(
+                "read from {crop}"
+            )),
+            timing.line_ns,
+            timing.vblank,
+            timing.period_ns
         ),
     );
     let frames = CameraFrames {
@@ -94,19 +101,32 @@ pub fn run(
     let setup = Setup {
         outputs: arguments.outputs.clone(),
         model,
+        sensor_crop,
         frame_us,
         settings,
         statistics_every: Duration::from_secs(STATISTICS_EVERY_S),
         encoders,
     };
+    let set_focus = |focus: u16| match &camera.lens {
+        Some(lens) => lens.set_control(v4l2::CID_FOCUS_ABSOLUTE, i32::from(focus)),
+        None => Ok(()),
+    };
     let mut input = input::unbuffered(io::stdin().as_fd())?;
-    capture(setup, &frames, &set_exposure, &mut input, writer)
+    capture(
+        setup,
+        &frames,
+        &set_exposure,
+        &set_focus,
+        &mut input,
+        writer,
+    )
 }
 
 /// The sysfs name of the video encoder node: Qualcomm's Iris, on the VENTUNO Q.
 const VIDEO_ENCODER: &str = "qcom-iris-encoder";
-// Metadata slots 2 (red gain) and 3 (blue gain).
-const WHITE_BALANCE_PRESENT: u8 = 0b1100;
+// The metadata record's slots of the white balance gains.
+const RED_GAIN_SLOT: usize = 2;
+const BLUE_GAIN_SLOT: usize = 3;
 
 /// An encoder for each output of `arguments` sent as H.264, in their order,
 /// started at the camera's frame rate.
@@ -145,22 +165,14 @@ fn start_encoders(
     Ok(encoders)
 }
 
-/// The record telling the host the exposure and gain just applied, stamped
-/// with a frame start.
-fn exposure_record((exposure_us, gain): (f64, f64), capture_ns: i64) -> Vec<u8> {
-    let mut values = [0.0; framing::METADATA_FIELDS];
-    values[0] = exposure_us;
-    values[1] = gain;
-    metadata_record(capture_ns, EXPOSURE_GAIN_PRESENT, &values)
-}
-
 /// The record telling the host the white balance gains applied to the frame
 /// starting at `capture_ns`.
 fn white_balance_record(gains: Gains, capture_ns: i64) -> Vec<u8> {
     let mut values = [0.0; framing::METADATA_FIELDS];
-    values[2] = gains.red;
-    values[3] = gains.blue;
-    metadata_record(capture_ns, WHITE_BALANCE_PRESENT, &values)
+    values[RED_GAIN_SLOT] = gains.red;
+    values[BLUE_GAIN_SLOT] = gains.blue;
+    let present = (1 << RED_GAIN_SLOT) | (1 << BLUE_GAIN_SLOT);
+    metadata_record(capture_ns, present, &values)
 }
 
 /// Where the frame loop takes its frames from.
@@ -171,7 +183,10 @@ trait Frames {
     /// Hands the next frame ready to `take`, with its start, or `None` for
     /// one incomplete, then gives its buffer back to the driver; `None`
     /// when no frame is ready.
-    fn next<T>(&self, take: impl FnOnce(Option<(RawFrame, i64)>) -> T) -> io::Result<Option<T>>;
+    fn with_next_frame<T>(
+        &self,
+        take: impl FnOnce(Option<(RawFrame, i64)>) -> T,
+    ) -> io::Result<Option<T>>;
 }
 
 /// The frames of a capture node, `width` x `height` samples each.
@@ -183,10 +198,13 @@ struct CameraFrames<'a> {
 
 impl Frames for CameraFrames<'_> {
     fn descriptor(&self) -> RawFd {
-        self.capture.node.fd
+        self.capture.node.as_raw_fd()
     }
 
-    fn next<T>(&self, take: impl FnOnce(Option<(RawFrame, i64)>) -> T) -> io::Result<Option<T>> {
+    fn with_next_frame<T>(
+        &self,
+        take: impl FnOnce(Option<(RawFrame, i64)>) -> T,
+    ) -> io::Result<Option<T>> {
         let Some(frame) = self.capture.dequeue()? else {
             return Ok(None);
         };
@@ -201,7 +219,7 @@ impl Frames for CameraFrames<'_> {
             (raw, frame.start_ns)
         });
         let taken = take(whole);
-        self.capture.queue(frame.index)?;
+        self.capture.queue(frame)?;
         Ok(Some(taken))
     }
 }
@@ -222,6 +240,8 @@ impl Records for Writer {
 struct Setup {
     outputs: Vec<OutputSpec>,
     model: SensorModel,
+    /// Where the sensor reads its frames from, when it reports it.
+    sensor_crop: Option<SensorCrop>,
     /// A frame's period.
     frame_us: f64,
     settings: ColourSettings,
@@ -240,55 +260,61 @@ struct Setup {
 fn capture(
     mut setup: Setup,
     frames: &impl Frames,
-    set_exposure: &dyn Fn(f64, f64) -> io::Result<(f64, f64)>,
+    set_exposure: &dyn Fn(Exposure) -> io::Result<Exposure>,
+    set_focus: &dyn Fn(u16) -> io::Result<()>,
     input: &mut File,
     records: &impl Records,
 ) -> io::Result<()> {
     let encoders = std::mem::take(&mut setup.encoders);
     let layouts: Vec<_> = encoders.iter().map(|encoder| encoder.layout()).collect();
-    let plan = Plan::new(&setup.outputs, setup.model, &layouts);
+    let plan = Plan::new(&setup.outputs, setup.model, setup.sensor_crop, &layouts);
     let jpeg_outputs = plan.jpeg_outputs();
     let mut video_outputs: Vec<(usize, Box<dyn Encoder>)> =
         plan.h264_outputs().into_iter().zip(encoders).collect();
     std::thread::scope(|scope| {
-        let (sender, queued) = mpsc::channel();
-        let (written, images) = mpsc::channel();
-        let (to_encode, frames_to_encode) = mpsc::channel();
-        let (encoded_sender, encoded) = mpsc::channel();
-        let (to_video, frames_to_video) = mpsc::channel();
-        let (video_sender, video) = mpsc::channel();
+        let (records_sender, records_receiver) = mpsc::channel();
+        let (written_sender, written_receiver) = mpsc::channel();
+        let (jpeg_frames_sender, jpeg_frames_receiver) = mpsc::channel();
+        let (jpegs_sender, jpegs_receiver) = mpsc::channel();
+        let (video_frames_sender, video_frames_receiver) = mpsc::channel();
+        let (video_sender, video_receiver) = mpsc::channel();
         let jpeg_encoder = (!jpeg_outputs.is_empty()).then(|| {
-            scope
-                .spawn(move || jpeg::encode_frames(&jpeg_outputs, frames_to_encode, encoded_sender))
+            scope.spawn(move || {
+                jpeg::encode_frames(&jpeg_outputs, jpeg_frames_receiver, jpegs_sender)
+            })
         });
         let video_encoder = (!video_outputs.is_empty()).then(|| {
             scope.spawn(move || {
-                h264::encode_frames(&mut video_outputs, frames_to_video, video_sender)
+                h264::encode_frames(&mut video_outputs, video_frames_receiver, video_sender)
             })
         });
         let encodings = Encodings {
-            jpegs: jpeg_encoder.is_some().then_some(encoded),
-            video: video_encoder.is_some().then_some(video),
+            jpegs: jpeg_encoder.is_some().then_some(jpegs_receiver),
+            video: video_encoder.is_some().then_some(video_receiver),
         };
-        let writer = scope.spawn(move || write_records(records, encodings, queued, written));
+        let writer = scope
+            .spawn(move || write_records(records, encodings, records_receiver, written_sender));
         let queue = Queue {
-            records: sender,
-            to_encode: jpeg_encoder.is_some().then_some(to_encode),
-            to_video: video_encoder.is_some().then_some(to_video),
-            images,
+            records: records_sender,
+            jpeg_frames: jpeg_encoder.is_some().then_some(jpeg_frames_sender),
+            video_frames: video_encoder.is_some().then_some(video_frames_sender),
+            written: written_receiver,
         };
-        let converted = convert_frames(setup, plan, frames, set_exposure, input, &queue);
+        let converted = convert_frames(setup, plan, frames, set_exposure, set_focus, input, &queue);
         drop(queue);
         let joined = |thread: std::thread::ScopedJoinHandle<io::Result<()>>| {
             thread
                 .join()
                 .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
         };
-        let written = joined(writer);
-        let encoded = jpeg_encoder.map_or(Ok(()), joined);
-        let video = video_encoder.map_or(Ok(()), joined);
+        let write_result = joined(writer);
+        let jpeg_result = jpeg_encoder.map_or(Ok(()), joined);
+        let video_result = video_encoder.map_or(Ok(()), joined);
         // After a failed encode or write the others' errors only say that thread stopped.
-        encoded.and(video).and(written).and(converted)
+        jpeg_result
+            .and(video_result)
+            .and(write_result)
+            .and(converted)
     })
 }
 
@@ -383,7 +409,7 @@ fn write_records(
                     drop(encoded.images);
                     encoded.took
                 });
-                let video = video.map_or_else(VideoWritten::default, |encoded| {
+                let video_written = video.map_or_else(VideoWritten::default, |encoded| {
                     drop(encoded.images);
                     let frames = encoded.frames.iter().flatten();
                     VideoWritten {
@@ -397,7 +423,7 @@ fn write_records(
                     images,
                     write,
                     encode,
-                    video,
+                    video: video_written,
                 });
             }
             Record::Other(record) => records.write(&[&record])?,
@@ -406,16 +432,16 @@ fn write_records(
     Ok(())
 }
 
-/// The frame's encodes in `slot`, received from `encoded` unless they already were.
+/// The frame's encodes in `cached`, received from `encoded` unless they already were.
 fn received<'a, T>(
-    slot: &'a mut Option<T>,
+    cached: &'a mut Option<T>,
     encoded: &Option<mpsc::Receiver<T>>,
 ) -> io::Result<&'a T> {
-    if slot.is_none() {
+    if cached.is_none() {
         let encoded = encoded.as_ref().expect("an encoder thread");
-        *slot = Some(encoded.recv().map_err(|_| encoder_stopped())?);
+        *cached = Some(encoded.recv().map_err(|_| encoder_stopped())?);
     }
-    Ok(slot.as_ref().expect("the frame's encodes"))
+    Ok(cached.as_ref().expect("the frame's encodes"))
 }
 
 /// The records on their way to the writer thread, the frames on their way
@@ -423,10 +449,10 @@ fn received<'a, T>(
 /// written on their way back.
 struct Queue {
     records: mpsc::Sender<Record>,
-    to_encode: Option<mpsc::Sender<FrameImages>>,
+    jpeg_frames: Option<mpsc::Sender<FrameImages>>,
     /// The frames on their way to the video encoder thread, with their start.
-    to_video: Option<mpsc::Sender<(FrameImages, i64)>>,
-    images: mpsc::Receiver<Written>,
+    video_frames: Option<mpsc::Sender<(FrameImages, i64)>>,
+    written: mpsc::Receiver<Written>,
 }
 
 impl Queue {
@@ -442,19 +468,19 @@ impl Queue {
         images: FrameImages,
         start_ns: i64,
     ) -> io::Result<()> {
-        if let Some(to_encode) = &self.to_encode {
-            (to_encode.send(Arc::clone(&images))).map_err(|_| encoder_stopped())?;
+        if let Some(jpeg_frames) = &self.jpeg_frames {
+            (jpeg_frames.send(Arc::clone(&images))).map_err(|_| encoder_stopped())?;
         }
-        if let Some(to_video) = &self.to_video {
+        if let Some(video_frames) = &self.video_frames {
             let frame = (Arc::clone(&images), start_ns);
-            to_video.send(frame).map_err(|_| encoder_stopped())?;
+            video_frames.send(frame).map_err(|_| encoder_stopped())?;
         }
         self.send(Record::Frame(sent, images))
     }
 
     /// The next frame's images written, waiting for their writes to end.
     fn written(&self) -> io::Result<Written> {
-        self.images.recv().map_err(|_| writer_stopped())
+        self.written.recv().map_err(|_| writer_stopped())
     }
 }
 
@@ -517,7 +543,8 @@ fn convert_frames(
     setup: Setup,
     mut plan: Plan,
     frames: &impl Frames,
-    set_exposure: &dyn Fn(f64, f64) -> io::Result<(f64, f64)>,
+    set_exposure: &dyn Fn(Exposure) -> io::Result<Exposure>,
+    set_focus: &dyn Fn(u16) -> io::Result<()>,
     input: &mut File,
     queue: &Queue,
 ) -> io::Result<()> {
@@ -530,6 +557,12 @@ fn convert_frames(
     } = setup;
     let log = |level, message: &str| {
         let _ = queue.send(Record::Other(log_record(level, message)));
+    };
+    let hold_focus = |settings: &ColourSettings| {
+        let focus = settings.capture.focus;
+        if let Err(error) = set_focus(focus) {
+            log(LogLevel::Warning, &format!("lens: focus {focus}: {error}"));
+        }
     };
     let tone_for = |settings: &ColourSettings| {
         Tone::with_sample_bits(
@@ -547,6 +580,7 @@ fn convert_frames(
         vec![Vec::new(); plan.output_count()],
         Some(vec![Vec::new(); plan.output_count()]),
     );
+    hold_focus(&settings);
     let mut tone = tone_for(&settings);
     let mut gains = settings.gains();
     let mut auto_exposure = auto_exposure(&settings.capture, frame_us);
@@ -558,14 +592,7 @@ fn convert_frames(
     let mut statistics_since = Instant::now();
     let mut poll_descriptors = [pollfd(frames.descriptor()), pollfd(input.as_raw_fd())];
     loop {
-        // SAFETY: `poll_descriptors` is a valid array of two pollfds.
-        if unsafe { libc::poll(poll_descriptors.as_mut_ptr(), 2, 1_000) } < 0 {
-            let error = io::Error::last_os_error();
-            if error.raw_os_error() == Some(libc::EINTR) {
-                continue;
-            }
-            return Err(error);
-        }
+        poll(&mut poll_descriptors, POLL_TIMEOUT)?;
         if poll_descriptors[1].revents != 0 {
             match framing::read_record(input, input::MAX_SETTING_BYTES)? {
                 None => return Ok(()),
@@ -575,25 +602,15 @@ fn convert_frames(
                         if !settings.awb {
                             gains = settings.gains();
                         }
-                        let running = (auto_exposure.exposure_us, auto_exposure.gain);
-                        let resume_from = resume_point(&settings.capture, running, || {
-                            let applied = set_exposure(
-                                f64::from(settings.capture.exposure_us),
-                                settings.capture.analogue_gain,
-                            )?;
-                            let record = exposure_record(applied, last_ns.unwrap_or(0));
-                            queue.send(Record::Other(record))?;
-                            Ok(applied)
-                        })?;
+                        let running = auto_exposure.exposure;
                         auto_exposure =
-                            auto_exposure_from(&settings.capture, frame_us, resume_from);
-                        if let Some((exposure_us, gain)) =
-                            capped_now(&settings.capture, &mut auto_exposure)
-                        {
-                            let applied = set_exposure(exposure_us, gain)?;
-                            let record = exposure_record(applied, last_ns.unwrap_or(0));
-                            queue.send(Record::Other(record))?;
-                        }
+                            retarget(&settings.capture, frame_us, running, |exposure| {
+                                let applied = set_exposure(exposure)?;
+                                let record = applied.record(last_ns.unwrap_or(0));
+                                queue.send(Record::Other(record))?;
+                                Ok(applied)
+                            })?;
+                        hold_focus(&settings);
                         log(LogLevel::Info, &format!("settings: {settings:?}"));
                     }
                     Err(message) => log(LogLevel::Warning, &message),
@@ -608,7 +625,7 @@ fn convert_frames(
             statistics_since = Instant::now();
         }
         // One frame a round: the settings and statistics are served between frames.
-        if let Some(taken) = frames.next(|whole| {
+        if let Some(taken) = frames.with_next_frame(|whole| {
             let (raw, start_ns) = whole?;
             let converting = Instant::now();
             converted += 1;
@@ -638,9 +655,9 @@ fn convert_frames(
             statistics.frames += 1;
             last_ns = Some(start_ns);
             if let Some(mean) = green_mean {
-                if let Some((exposure_us, gain)) = auto_exposure.observe(mean) {
-                    let applied = set_exposure(exposure_us, gain)?;
-                    queue.send(Record::Other(exposure_record(applied, start_ns)))?;
+                if let Some(exposure) = auto_exposure.observe(mean) {
+                    let applied = set_exposure(exposure)?;
+                    queue.send(Record::Other(applied.record(start_ns)))?;
                 }
             }
             if settings.awb && reported_gains != Some(applied_gains) {
@@ -687,29 +704,20 @@ fn convert_frames(
 mod tests {
     use std::cell::{Cell, RefCell};
     use std::io::Write;
-    use std::os::fd::FromRawFd;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{mpsc, Mutex};
 
     use super::*;
     use crate::arguments::{Format, Output, Source};
-    use crate::bands::{Conversion, Images};
+    use crate::bands::Conversion;
     use crate::bayer::tests::padded_packed12;
-    use crate::bayer::Layout;
     use crate::encoder::EncodedFrame;
+    use crate::fixtures::{packed12_frame, rgb_only};
+    use crate::input::tests::{pipe, record};
     use crate::nv12::{self, Nv12Layout};
     use crate::processor::tests::{develop_along, samples, Path};
     use crate::processor::MEASURED_ROW_STEP;
     use crate::scale;
-
-    // A pipe's reading and writing ends.
-    fn pipe() -> (File, File) {
-        let mut ends = [0; 2];
-        // SAFETY: `ends` has room for the two descriptors.
-        assert_eq!(unsafe { libc::pipe(ends.as_mut_ptr()) }, 0);
-        // SAFETY: both descriptors were just created and nothing else owns them.
-        unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) }
-    }
 
     const WIDTH: usize = 24;
     const HEIGHT: usize = 46;
@@ -753,7 +761,7 @@ mod tests {
             self.ready.0.as_raw_fd()
         }
 
-        fn next<T>(
+        fn with_next_frame<T>(
             &self,
             take: impl FnOnce(Option<(RawFrame, i64)>) -> T,
         ) -> io::Result<Option<T>> {
@@ -767,21 +775,13 @@ mod tests {
                 let _ = on_take.send(index);
             }
             for (_, setting) in self.settings.iter().filter(|(at, _)| *at == index) {
-                let record = [
-                    &(setting.len() as u32).to_be_bytes()[..],
-                    setting.as_bytes(),
-                ];
                 let mut host = self.host.borrow_mut();
-                host.as_mut().unwrap().write_all(&record.concat())?;
+                host.as_mut()
+                    .unwrap()
+                    .write_all(&record(setting.as_bytes()))?;
             }
             let whole = frame.as_ref().map(|raw| {
-                let frame = RawFrame {
-                    raw,
-                    width: WIDTH,
-                    height: HEIGHT,
-                    row_stride: STRIDE,
-                    layout: Layout::Packed12,
-                };
+                let frame = packed12_frame(raw, WIDTH, STRIDE);
                 (frame, 1_000_000 * (index as i64 + 1))
             });
             Ok(Some(take(whole)))
@@ -863,13 +863,19 @@ mod tests {
         let setup = Setup {
             outputs: outputs.to_vec(),
             model: SensorModel::Imx477,
+            sensor_crop: None,
             frame_us: 28_571.0,
             settings: ColourSettings::for_sensor(SensorModel::Imx477),
             statistics_every,
             encoders,
         };
-        let set_exposure = |exposure_us: f64, gain: f64| Ok((exposure_us.round(), gain));
-        capture(setup, frames, &set_exposure, input, records)
+        let set_exposure = |exposure: Exposure| {
+            Ok(Exposure {
+                exposure_us: exposure.exposure_us.round(),
+                ..exposure
+            })
+        };
+        capture(setup, frames, &set_exposure, &|_| Ok(()), input, records)
     }
 
     // The records the frame loop writes for `frames` from the IMX477.
@@ -931,7 +937,7 @@ mod tests {
             .iter()
             .all(|record| record[0] != 7 || record[1] == 0));
         // Which thread writes the records changes none of them nor their order.
-        assert_eq!(records_digest(&records), 0xf59f18cebb97b9cf);
+        assert_eq!(records_digest(&records), 0xbd0b60e328854774);
     }
 
     #[test]
@@ -1203,6 +1209,37 @@ mod tests {
     }
 
     #[test]
+    fn the_lens_is_held_at_the_focus_setting_from_the_start_and_as_it_changes() {
+        let (frames, mut input) = TestFrames::new(scenes(3, None), vec![(1, "focus=600")]);
+        let setup = Setup {
+            outputs: vec![FULL],
+            model: SensorModel::Imx708,
+            sensor_crop: None,
+            frame_us: 33_333.0,
+            settings: ColourSettings::for_sensor(SensorModel::Imx708),
+            statistics_every: Duration::from_secs(3_600),
+            encoders: Vec::new(),
+        };
+        let focused = RefCell::new(Vec::new());
+        let set_focus = |focus: u16| {
+            focused.borrow_mut().push(focus);
+            Ok(())
+        };
+        let set_exposure = |exposure: Exposure| Ok(exposure);
+        let records = Collected::default();
+        capture(
+            setup,
+            &frames,
+            &set_exposure,
+            &set_focus,
+            &mut input,
+            &records,
+        )
+        .unwrap();
+        assert_eq!(focused.into_inner(), [428, 600]);
+    }
+
+    #[test]
     fn a_setting_sent_while_frames_arrive_applies_from_the_next_frame() {
         let upright = captured(scenes(8, None), vec![]);
         let turned = captured(scenes(8, None), vec![(2, "rotation=180")]);
@@ -1286,6 +1323,29 @@ mod tests {
             .iter()
             .all(|&(red, blue)| (0.5..=4.0).contains(&red) && (0.5..=4.0).contains(&blue)));
         assert!(reported.iter().any(|&gains| gains != (1.0, 1.0)));
+    }
+
+    #[test]
+    fn a_still_scene_reports_its_white_balance_only_when_the_gains_change() {
+        // The same scene with a little noise from one frame to the next.
+        let frames = (0..6)
+            .map(|index| {
+                let samples: Vec<u16> = samples(WIDTH, HEIGHT)
+                    .iter()
+                    .map(|sample| sample + index % 3)
+                    .collect();
+                Some(padded_packed12(&samples, WIDTH, STRIDE))
+            })
+            .collect();
+        let records = captured(frames, vec![]);
+        let reported: Vec<(f64, f64)> = records
+            .iter()
+            .filter_map(|record| white_balance_of(record))
+            .collect();
+
+        // The settings' gains on the first frame, then the scene's.
+        assert_eq!(reported.len(), 2, "{reported:?}");
+        assert_eq!(reported[0], (1.0, 1.0));
     }
 
     #[test]
@@ -1462,13 +1522,7 @@ mod tests {
         let (width, height) = (2028, 1520);
         let stride = width * 3 / 2;
         let raw = padded_packed12(&samples(width, height), width, stride);
-        let frame = RawFrame {
-            raw: &raw,
-            width,
-            height,
-            row_stride: stride,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, width, stride);
         let conversion = Conversion {
             output: Output::Full,
             rotate_180: false,
@@ -1478,11 +1532,7 @@ mod tests {
             threads: 3,
         };
         let mut rgb = Vec::new();
-        let images = Images {
-            rgb: &mut rgb,
-            averaged: None,
-            nv12: None,
-        };
+        let images = rgb_only(&mut rgb);
         develop_along(
             Path::Denoised,
             &frame,

@@ -10,7 +10,7 @@ use crate::jpeg::JpegOutput;
 use crate::nv12::{self, Nv12Layout};
 use crate::processor::{Cpu, Development, Processor};
 use crate::scale::Averager;
-use crate::sensor::SensorModel;
+use crate::sensor::{SensorCrop, SensorModel};
 
 /// What makes an output's image of a frame.
 enum Role {
@@ -61,9 +61,15 @@ impl Plan {
     /// The plan of `outputs` from a `model` sensor. Each `from:` output names
     /// an earlier one, as the command line guarantees: the image a role reads
     /// is made before it, and the one a processor averages into comes after
-    /// its own. `layouts` are the NV12 layouts of the H.264 outputs'
+    /// its own. `sensor_crop` is where the sensor reads its frames from, when
+    /// it reports it. `layouts` are the NV12 layouts of the H.264 outputs'
     /// encoders, in the outputs' order.
-    pub fn new(outputs: &[OutputSpec], model: SensorModel, layouts: &[Nv12Layout]) -> Plan {
+    pub fn new(
+        outputs: &[OutputSpec],
+        model: SensorModel,
+        sensor_crop: Option<SensorCrop>,
+        layouts: &[Nv12Layout],
+    ) -> Plan {
         let mut roles: Vec<Option<Role>> = outputs.iter().map(|_| None).collect();
         let mut videos = 0;
         let video_slots: Vec<Option<usize>> = (outputs.iter())
@@ -78,7 +84,7 @@ impl Plan {
             let Source::Cpu(output) = spec.source else {
                 continue;
             };
-            let processor = Box::new(Cpu::new(model, output)) as Box<dyn Processor>;
+            let processor = Box::new(Cpu::new(model, output, sensor_crop)) as Box<dyn Processor>;
             let averaged_into = (processor.averages_2x2())
                 .then(|| {
                     outputs.iter().position(|later| {
@@ -345,7 +351,7 @@ mod tests {
 
     // What makes each output, by name.
     fn roles(outputs: &[OutputSpec], layouts: &[Nv12Layout]) -> Vec<String> {
-        let plan = Plan::new(outputs, SensorModel::Imx477, layouts);
+        let plan = Plan::new(outputs, SensorModel::Imx477, None, layouts);
         (plan.outputs.iter())
             .map(|output| match output.role {
                 Role::Processed {
@@ -391,7 +397,7 @@ mod tests {
                 "jpeg 2 1",
             ]
         );
-        let plan = Plan::new(&outputs, SensorModel::Imx477, &[]);
+        let plan = Plan::new(&outputs, SensorModel::Imx477, None, &[]);
         let jpegs: Vec<(usize, usize)> = (plan.sent(5).into_iter())
             .filter_map(|(index, sent)| match sent {
                 Sent::Jpeg { header, slot } => {
@@ -429,7 +435,7 @@ mod tests {
             size: stride * luma_rows * 3 / 2,
         };
         let layouts = [layout(24, 46, 32, 64), layout(12, 46, 16, 64)];
-        let mut plan = Plan::new(&outputs, SensorModel::Imx477, &layouts);
+        let mut plan = Plan::new(&outputs, SensorModel::Imx477, None, &layouts);
         assert_eq!(
             roles(&outputs, &layouts),
             [
@@ -480,7 +486,7 @@ mod tests {
             ..spec(Source::Cpu(Output::Half), (12, 23), Format::Rgb)
         };
         let outputs = [unsent, spec(Source::From(0), (6, 23), Format::Rgb)];
-        let plan = Plan::new(&outputs, SensorModel::Imx477, &[]);
+        let plan = Plan::new(&outputs, SensorModel::Imx477, None, &[]);
         assert_eq!(
             plan.sent(5),
             [(1, Sent::Image(output_frame_header(1, 6, 23, 5)))]

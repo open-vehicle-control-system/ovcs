@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use detection::letterbox::{letterbox_for, letterbox_into, Frame};
+use detection::letterbox::{letterbox_for, letterbox_into};
 use detection::nms;
 use detection::protocol::{
     detections_record, inference_micros, parse_jpeg_request, parse_request, Request,
@@ -14,7 +14,7 @@ use framing::{LogLevel, Writer};
 use crate::hailo::{io, Device, Network, HAILO_FORMAT_TYPE_FLOAT32};
 use crate::jpeg::SharedDecoder;
 use crate::outcome::{reply_for, FrameOutcome, Reply};
-use crate::{log, Answer};
+use crate::Answer;
 
 /// Threads the letterbox splits its rows across.
 const LETTERBOX_THREADS: usize = 1;
@@ -44,7 +44,9 @@ impl Detect {
         }
         let model_size = input.width;
         Ok(Detect {
-            class_count: network.nms_classes(),
+            class_count: network
+                .nms_classes()
+                .map_err(|message| format!("{hef_path}: {message}"))?,
             model_size: model_size as i32,
             score_threshold,
             jpegs: Arc::clone(jpegs),
@@ -73,8 +75,7 @@ impl Detect {
         let decoded = match self.jpegs.decode(request.jpeg) {
             Ok(decoded) => decoded,
             Err(message) => {
-                log(
-                    writer,
+                writer.log(
                     LogLevel::Warning,
                     &format!("frame {}: {message}", request.sequence),
                 );
@@ -99,19 +100,13 @@ impl Detect {
         let mut inference_time = None;
         let outcome = match request.check() {
             Err(message) => {
-                log(writer, LogLevel::Warning, &message);
+                writer.log(LogLevel::Warning, &message);
                 FrameOutcome::Rejected
             }
-            Ok(()) => {
+            Ok(frame) => {
                 letterbox_into(
-                    &Frame {
-                        pixels: request.pixels,
-                        width,
-                        height,
-                        channels: request.channels,
-                    },
+                    &frame,
                     self.network.input_mut(),
-                    self.model_size,
                     &letterbox,
                     LETTERBOX_THREADS,
                 );
@@ -121,7 +116,7 @@ impl Detect {
                         FrameOutcome::Inferred
                     }
                     Err(failure) => {
-                        log(writer, LogLevel::Error, &failure.message);
+                        writer.log(LogLevel::Error, &failure.message);
                         failure.outcome
                     }
                 }
@@ -133,8 +128,7 @@ impl Detect {
         match reply_for(outcome) {
             Reply::Empty => return Answer::Reply(empty),
             Reply::EmptyThenExit => {
-                log(
-                    writer,
+                writer.log(
                     LogLevel::Warning,
                     "detection vstreams may hold a frame in flight; exiting for a restart",
                 );
@@ -151,15 +145,8 @@ impl Detect {
                 output.len() / std::mem::size_of::<f32>(),
             )
         };
-        let detections = nms::decode_nms_by_class(
-            output,
-            self.class_count,
-            width,
-            height,
-            &letterbox,
-            self.model_size,
-            self.score_threshold,
-        );
+        let detections =
+            nms::decode_nms_by_class(output, self.class_count, &letterbox, self.score_threshold);
         Answer::Reply(detections_record(
             request.sequence,
             &detections,

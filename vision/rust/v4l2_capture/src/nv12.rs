@@ -144,6 +144,7 @@ fn luma_row(rgb: &[u8], samples: &mut [u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::xorshift;
 
     // BT.601 limited range in floating point, each value one division of
     // whole numbers, so that a value halfway between two rounds up.
@@ -199,15 +200,8 @@ mod tests {
     }
 
     fn noise(length: usize) -> Vec<u8> {
-        let mut state = 0x2545_f491u32;
-        (0..length)
-            .map(|_| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
-                state as u8
-            })
-            .collect()
+        let mut next = xorshift(0x2545_f491);
+        (0..length).map(|_| next() as u8).collect()
     }
 
     fn converted(rgb: &[u8], layout: &Nv12Layout, threads: usize) -> Vec<u8> {

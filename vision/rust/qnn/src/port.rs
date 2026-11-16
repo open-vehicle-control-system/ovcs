@@ -6,18 +6,16 @@ use std::os::fd::AsFd;
 use std::process::exit;
 use std::time::Instant;
 
-use framing::{log_record, LogLevel, Writer};
+use framing::{exit_early, LogLevel, Requests, Writer, MAX_REQUEST_BYTES};
 
 use crate::stage_times::Stage;
 use crate::{
-    CommandLine, Model, Power, StageTimes, TimeLog, Timing, EXECUTION_STAGES, STAGE_TIMES_EVERY,
+    CommandLine, ExecutionStages, Model, Power, StageTimes, TimeLog, Timing, EXECUTION_STAGES,
+    STAGE_TIMES_EVERY,
 };
 
 /// Room asked for in the request pipe, which the BEAM then fills in fewer turns with the Port.
 const REQUEST_PIPE_BYTES: usize = 4 << 20;
-
-/// The longest request taken: above any camera's whole RGB frame.
-const MAX_REQUEST_BYTES: usize = 64 << 20;
 
 /// What a Port serves with: its own positional arguments, the power vote, and the writer of
 /// its records.
@@ -25,16 +23,6 @@ pub struct Start {
     pub arguments: Vec<String>,
     pub power: Power,
     pub writer: Writer,
-}
-
-pub fn log(writer: &Writer, level: LogLevel, message: &str) {
-    let _ = writer.write_record(&log_record(level, message));
-}
-
-/// A failure before stdout carries records goes to stderr.
-pub fn exit_early(name: &str, message: &str, status: i32) -> ! {
-    eprintln!("{name}: {message}");
-    exit(status)
 }
 
 /// Reads the command line of the Port `name`: answers `--graph-names` and exits, exits with
@@ -67,22 +55,17 @@ pub fn start(name: &str, usage: &str) -> Start {
 /// `power`, logging the pipe's size and the vote's outcome.
 pub fn open_model(context_path: &str, power: Power, writer: &Writer) -> Result<Model, String> {
     match framing::enlarge_pipe(std::io::stdin().as_fd(), REQUEST_PIPE_BYTES) {
-        Ok(bytes) => log(
-            writer,
-            LogLevel::Info,
-            &format!("request pipe: {bytes} bytes"),
-        ),
-        Err(error) => log(
-            writer,
+        Ok(bytes) => writer.log(LogLevel::Info, &format!("request pipe: {bytes} bytes")),
+        Err(error) => writer.log(
             LogLevel::Warning,
             &format!("request pipe not enlarged: {error}"),
         ),
     }
     let binary = std::fs::read(context_path).map_err(|e| format!("{context_path}: {e}"))?;
     let model = Model::open(&binary, power)?;
-    match power.outcome(model.power_vote_error.as_deref()) {
-        Ok(line) => log(writer, LogLevel::Info, &line),
-        Err(line) => log(writer, LogLevel::Warning, &line),
+    match power.outcome(model.power_vote_error()) {
+        Ok(line) => writer.log(LogLevel::Info, &line),
+        Err(line) => writer.log(LogLevel::Warning, &line),
     }
     Ok(model)
 }
@@ -91,14 +74,13 @@ pub fn open_model(context_path: &str, power: Power, writer: &Writer) -> Result<M
 /// (`TimeLog`).
 pub fn log_execution(writer: &Writer, model: &mut Model, time_log: &mut TimeLog, timing: &Timing) {
     if let Some(report) = model.take_profile_report() {
-        log(
-            writer,
+        writer.log(
             LogLevel::Info,
             &format!("first execution's profile events: {report}"),
         );
     }
     if let Some(message) = time_log.message(timing.source, model.profile_error.as_deref()) {
-        log(writer, LogLevel::Info, &message);
+        writer.log(LogLevel::Info, &message);
     }
 }
 
@@ -111,7 +93,7 @@ pub struct Clock {
     idle: Stage,
     read: Stage,
     prepare: Stage,
-    execution: [Stage; 6],
+    execution: ExecutionStages,
     finish: Stage,
     reply: Stage,
 }
@@ -133,7 +115,7 @@ impl Clock {
             finish,
             "reply",
         ];
-        let (times, [idle, read, prepare, e0, e1, e2, e3, e4, e5, finish, reply]) =
+        let (times, [idle, read, prepare, execution @ .., finish, reply]) =
             StageTimes::new(names, STAGE_TIMES_EVERY, now);
         Clock {
             times,
@@ -141,7 +123,7 @@ impl Clock {
             idle,
             read,
             prepare,
-            execution: [e0, e1, e2, e3, e4, e5],
+            execution: ExecutionStages::from(execution),
             finish,
             reply,
         }
@@ -168,42 +150,58 @@ impl Clock {
     }
 }
 
+/// What a Port makes of a record.
+pub enum Answer {
+    /// Not a request: there is no sequence to answer.
+    Nothing,
+    Reply(Vec<u8>),
+    /// The model failed: the Port exits once the reply is written, so its driver counts the
+    /// failure and reopens it.
+    ReplyThenExit {
+        reply: Vec<u8>,
+        error: String,
+    },
+}
+
 /// Answers the requests `input` brings until it closes, each record with the reply `answer`
 /// gives it, written to `writer`; a record `answer` gives none for is skipped with a warning.
-/// `Err` is a failed read.
+/// `Err` is a failed read, or the error of a `ReplyThenExit` once its reply is written.
 pub fn serve<R: Read>(
     input: &mut R,
     writer: &Writer,
     clock: &mut Clock,
-    mut answer: impl FnMut(&[u8], &mut Clock) -> Option<Vec<u8>>,
+    mut answer: impl FnMut(&[u8], &mut Clock) -> Answer,
 ) -> Result<(), String> {
-    let mut record = Vec::new();
-    let failed = |error: std::io::Error| format!("reading a request: {error}");
+    let mut requests = Requests::new(input, MAX_REQUEST_BYTES);
     loop {
-        let Some(length) = framing::read_length(input, MAX_REQUEST_BYTES).map_err(failed)? else {
+        let read = requests.read_timed(|| clock.lap(clock.idle));
+        let Some(record) = read.map_err(|error| format!("reading a request: {error}"))? else {
             return Ok(());
         };
-        clock.lap(clock.idle);
-        if !framing::read_body_into(input, length, &mut record).map_err(failed)? {
-            return Ok(());
-        }
         clock.lap(clock.read);
-        let Some(reply) = answer(&record, clock) else {
-            let skipped = format!(
-                "skipped a record of {} bytes that is no request",
-                record.len()
-            );
-            log(writer, LogLevel::Warning, &skipped);
-            continue;
+        let (reply, error) = match answer(record, clock) {
+            Answer::Nothing => {
+                let skipped = format!(
+                    "skipped a record of {} bytes that is no request",
+                    record.len()
+                );
+                writer.log(LogLevel::Warning, &skipped);
+                continue;
+            }
+            Answer::Reply(reply) => (reply, None),
+            Answer::ReplyThenExit { reply, error } => (reply, Some(error)),
         };
         // The host closed the Port: nothing reads a log either.
         if writer.write_record(&reply).is_err() {
             return Ok(());
         }
+        if let Some(error) = error {
+            return Err(error);
+        }
         clock.lap(clock.reply);
         clock.times.count_request();
         if let Some(line) = clock.times.line(clock.mark) {
-            log(writer, LogLevel::Info, &line);
+            writer.log(LogLevel::Info, &line);
         }
     }
 }
@@ -213,6 +211,8 @@ mod tests {
     use std::fs::File;
     use std::os::fd::OwnedFd;
     use std::os::unix::net::UnixStream;
+
+    use framing::log_record;
 
     use super::*;
 
@@ -232,14 +232,21 @@ mod tests {
     }
 
     // The records `serve` writes for `input`, each request answered with its bytes doubled,
-    // one starting with 0 skipped.
+    // one starting with 0 skipped, one starting with 255 answered as it is before the Port exits.
     fn served(mut input: impl Read) -> (Result<(), String>, Vec<Vec<u8>>) {
         let (writer, mut written) = writer();
         let mut clock = Clock::new("resize", "argmax", Instant::now());
         let outcome = serve(&mut input, &writer, &mut clock, |record, clock| {
             clock.prepared();
             clock.finished();
-            (record[0] != 0).then(|| record.iter().map(|byte| byte * 2).collect())
+            match record[0] {
+                0 => Answer::Nothing,
+                255 => Answer::ReplyThenExit {
+                    reply: record.to_vec(),
+                    error: "graphExecute failed".to_string(),
+                },
+                _ => Answer::Reply(record.iter().map(|byte| byte * 2).collect()),
+            }
         });
         drop(writer);
         let mut records = Vec::new();
@@ -273,6 +280,13 @@ mod tests {
         let (outcome, records) = served(cut);
         assert_eq!(outcome, Ok(()));
         assert_eq!(records, [vec![2, 4]]);
+    }
+
+    #[test]
+    fn a_failed_model_ends_the_loop_with_its_error_once_the_reply_is_written() {
+        let (outcome, records) = served(&framed(&[&[1, 2], &[255, 4], &[3]])[..]);
+        assert_eq!(outcome, Err("graphExecute failed".to_string()));
+        assert_eq!(records, [vec![2, 4], vec![255, 4]]);
     }
 
     // One request, then a read that fails.

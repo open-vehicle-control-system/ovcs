@@ -1,10 +1,70 @@
 //! Conversions between physical settings and the sensor's V4L2 controls.
 
+use std::io;
+
 use crate::tuning::{self, Tuning};
+use crate::v4l2::{self, Node};
+
+// The exposure ends this many lines before the frame does.
+const EXPOSURE_MARGIN_LINES: i32 = 8;
 
 /// Line time in nanoseconds: the line length in pixels over the pixel rate.
 pub fn line_ns(sensor_width: u32, hblank: u32, pixel_rate_hz: u64) -> f64 {
     f64::from(sensor_width + hblank) * 1e9 / pixel_rate_hz as f64
+}
+
+/// The line time of a sensor's frames and the vertical blanking that runs
+/// them at a frame rate.
+pub struct FrameTiming {
+    pub line_ns: f64,
+    /// The VBLANK that gives the frame rate, within the control's range.
+    pub vblank: i32,
+    pub vblank_min: i32,
+    pub vblank_max: i32,
+    pub period_ns: i64,
+    sensor_height: u32,
+}
+
+impl FrameTiming {
+    /// The timing of `sensor_width` x `sensor_height` frames at `fps`, the line
+    /// time read from `line_sensor` and the VBLANK range from `vblank_sensor`.
+    pub fn read(
+        line_sensor: &Node,
+        vblank_sensor: &Node,
+        (sensor_width, sensor_height): (u32, u32),
+        fps: u32,
+    ) -> io::Result<FrameTiming> {
+        let hblank = line_sensor.control(v4l2::CID_HBLANK)?;
+        let pixel_rate = line_sensor.control64(v4l2::CID_PIXEL_RATE)?;
+        let line_ns = line_ns(sensor_width, hblank as u32, pixel_rate as u64);
+        let (vblank_min, vblank_max) = vblank_sensor.control_range(v4l2::CID_VBLANK)?;
+        let frame_lines = (1e9 / f64::from(fps) / line_ns).round() as i32;
+        let vblank = (frame_lines - sensor_height as i32).clamp(vblank_min, vblank_max);
+        let period_ns = (f64::from(sensor_height as i32 + vblank) * line_ns).round() as i64;
+        Ok(FrameTiming {
+            line_ns,
+            vblank,
+            vblank_min,
+            vblank_max,
+            period_ns,
+            sensor_height,
+        })
+    }
+
+    pub fn frame_us(&self) -> f64 {
+        self.period_ns as f64 / 1_000.0
+    }
+
+    /// The exposure lines closest to `exposure_us` that fit in a frame.
+    pub fn exposure_lines(&self, exposure_us: f64) -> i32 {
+        let max_lines = self.sensor_height as i32 + self.vblank - EXPOSURE_MARGIN_LINES;
+        ((exposure_us * 1_000.0 / self.line_ns).round() as i32).clamp(1, max_lines)
+    }
+
+    /// The exposure time of `lines` exposure lines.
+    pub fn exposure_us(&self, lines: i32) -> f64 {
+        f64::from(lines) * self.line_ns / 1_000.0
+    }
 }
 
 /// What differs between the sensors `v4l2_capture` drives.
@@ -22,16 +82,16 @@ pub enum SensorModel {
 const BLACK_LEVEL_10_BIT: u16 = 64;
 
 impl SensorModel {
-    /// The model of the sensor whose V4L2 entity is `name` (`imx296 5-001a`);
-    /// the IMX708 for any other.
-    pub fn for_sensor(name: &str) -> SensorModel {
-        if name.starts_with("imx296") {
-            SensorModel::Imx296
-        } else if name.starts_with("imx477") {
-            SensorModel::Imx477
-        } else {
-            SensorModel::Imx708
-        }
+    /// The model of the sensor whose V4L2 entity is `name` (`imx296 5-001a`),
+    /// `None` for a sensor of another model.
+    pub fn for_sensor(name: &str) -> Option<SensorModel> {
+        [
+            ("imx708", SensorModel::Imx708),
+            ("imx296", SensorModel::Imx296),
+            ("imx477", SensorModel::Imx477),
+        ]
+        .into_iter()
+        .find_map(|(prefix, model)| name.starts_with(prefix).then_some(model))
     }
 
     /// The analogue gain code for `gain`, within the control's range.
@@ -77,6 +137,40 @@ impl SensorModel {
             SensorModel::Imx708 | SensorModel::Imx296 => 10,
             SensorModel::Imx477 => 12,
         }
+    }
+}
+
+/// A rectangle of a sensor's pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rectangle {
+    pub left: i32,
+    pub top: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Where a frame lies on its sensor: the rectangle `crop` it is read from,
+/// binned or not, within `bounds`, the rectangle the sensor can read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SensorCrop {
+    pub crop: Rectangle,
+    pub bounds: Rectangle,
+}
+
+impl std::fmt::Display for SensorCrop {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Rectangle {
+            left,
+            top,
+            width,
+            height,
+        } = self.crop;
+        let bounds = self.bounds;
+        write!(
+            formatter,
+            "{width}x{height} at ({left}, {top}) of {}x{} at ({}, {})",
+            bounds.width, bounds.height, bounds.left, bounds.top
+        )
     }
 }
 
@@ -134,19 +228,20 @@ mod tests {
     fn the_model_follows_the_sensor_name() {
         assert_eq!(
             SensorModel::for_sensor("imx296 5-001a"),
-            SensorModel::Imx296
+            Some(SensorModel::Imx296)
         );
         assert_eq!(
             SensorModel::for_sensor("imx708 6-001a"),
-            SensorModel::Imx708
+            Some(SensorModel::Imx708)
         );
+        assert_eq!(SensorModel::for_sensor("imx219 10-0010"), None);
         assert!(SensorModel::Imx708.has_lens());
         assert!(!SensorModel::Imx296.has_lens());
     }
 
     #[test]
     fn the_imx477_is_a_12_bit_sensor_without_a_lens() {
-        let model = SensorModel::for_sensor("imx477 5-001a");
+        let model = SensorModel::for_sensor("imx477 5-001a").unwrap();
         assert_eq!(model, SensorModel::Imx477);
         assert!(!model.has_lens());
         assert_eq!(model.sample_bits(), 12);

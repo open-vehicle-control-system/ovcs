@@ -1,4 +1,4 @@
-//! Decoding of HailoRT's `HAILO_NMS_BY_CLASS` output.
+//! Decoding of HailoRT's `HAILO_NMS_BY_CLASS` output, and greedy non-maximum suppression.
 
 use crate::letterbox::{to_caller, Letterbox};
 use crate::protocol::Detection;
@@ -11,16 +11,16 @@ pub const FLOATS_PER_BOX: usize = 5;
 pub fn decode_nms_by_class(
     output: &[f32],
     class_count: usize,
-    source_width: i32,
-    source_height: i32,
     letterbox: &Letterbox,
-    model: i32,
     score_threshold: f32,
 ) -> Vec<Detection> {
     let mut detections = Vec::new();
     let mut offset = 0;
-    let model = model as f32;
-    let (width, height) = (source_width as f32, source_height as f32);
+    let model_size = letterbox.model_size as f32;
+    let (width, height) = (
+        letterbox.caller_width as f32,
+        letterbox.caller_height as f32,
+    );
 
     for class_id in 0..class_count {
         if offset >= output.len() {
@@ -44,10 +44,10 @@ pub fn decode_nms_by_class(
             let [x0, y0, x1, y1] = to_caller(
                 letterbox,
                 [
-                    bounding_box[1] * model,
-                    bounding_box[0] * model,
-                    bounding_box[3] * model,
-                    bounding_box[2] * model,
+                    bounding_box[1] * model_size,
+                    bounding_box[0] * model_size,
+                    bounding_box[3] * model_size,
+                    bounding_box[2] * model_size,
                 ],
             );
             // A box may extend into the padding when an object is cut off at the frame edge.
@@ -163,7 +163,7 @@ mod tests {
             2.0, 0.5, 0.25, 0.625, 0.5, 0.9, //
             0.5, 0.0, 1.0, 0.5, 0.4,
         ];
-        let got = decode_nms_by_class(&output, 3, 480, 270, &letterbox, 640, 0.4);
+        let got = decode_nms_by_class(&output, 3, &letterbox, 0.4);
         assert_eq!(got.len(), 2);
         assert_eq!(got[0].class_id, 2);
         assert_eq!(got[0].score, 0.9);
@@ -176,14 +176,14 @@ mod tests {
         let letterbox = letterbox_for(480, 270, 640);
         // Entirely inside the top padding: clamps to zero height.
         let output = [1.0, 0.0, 0.1, 0.1, 0.2, 0.9];
-        assert!(decode_nms_by_class(&output, 1, 480, 270, &letterbox, 640, 0.4).is_empty());
+        assert!(decode_nms_by_class(&output, 1, &letterbox, 0.4).is_empty());
     }
 
     #[test]
     fn stops_on_a_count_that_overflows() {
         let letterbox = letterbox_for(480, 270, 640);
         let output = [1.0e30, 0.5, 0.25, 0.625, 0.5, 0.9];
-        assert!(decode_nms_by_class(&output, 2, 480, 270, &letterbox, 640, 0.4).is_empty());
+        assert!(decode_nms_by_class(&output, 2, &letterbox, 0.4).is_empty());
         assert_eq!(class_end(1, usize::MAX), None);
         assert_eq!(class_end(usize::MAX, 1), None);
     }
@@ -192,7 +192,7 @@ mod tests {
     fn stops_on_truncated_output() {
         let letterbox = letterbox_for(480, 270, 640);
         let output = [1.0, 0.5, 0.25, 0.625, 0.5, 0.9, 3.0, 0.5];
-        let got = decode_nms_by_class(&output, 5, 480, 270, &letterbox, 640, 0.4);
+        let got = decode_nms_by_class(&output, 5, &letterbox, 0.4);
         assert_eq!(got.len(), 1);
     }
 }

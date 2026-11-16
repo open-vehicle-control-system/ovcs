@@ -7,7 +7,7 @@ use crate::arguments::Output;
 use crate::bands::{Conversion, Images, Measures};
 use crate::bayer::{self, RawFrame, Tone};
 use crate::colour::{self, Colour, ContrastTable};
-use crate::sensor::SensorModel;
+use crate::sensor::{SensorCrop, SensorModel};
 use crate::settings::ColourSettings;
 use crate::tuning::{LensShading, Tuning};
 use crate::white_balance::Gains;
@@ -59,7 +59,7 @@ pub struct Cpu {
 /// The conversion a sensor takes, with the buffers it converts through.
 enum ColourPath {
     Tuned {
-        tuned: TunedColour,
+        tuned: Box<TunedColour>,
         buffers: colour::Buffers,
     },
     Gamma {
@@ -68,10 +68,12 @@ enum ColourPath {
 }
 
 impl Cpu {
-    pub fn new(model: SensorModel, output: Output) -> Cpu {
+    /// The conversion of a `model` sensor's frames, read from `sensor_crop`
+    /// when the sensor reports it.
+    pub fn new(model: SensorModel, output: Output, sensor_crop: Option<SensorCrop>) -> Cpu {
         let path = match model.tuning() {
             Some(tuning) => ColourPath::Tuned {
-                tuned: TunedColour::new(tuning),
+                tuned: Box::new(TunedColour::new(tuning, sensor_crop)),
                 buffers: colour::Buffers::default(),
             },
             None => ColourPath::Gamma {
@@ -123,11 +125,13 @@ impl Processor for Cpu {
     }
 }
 
-/// A sensor's tuning, the table of its contrast curve, and what it gives at the white
-/// balance gains of the last frame.
+/// A sensor's tuning, the table of its contrast curve, where its frames are
+/// read from when it reports it, and what it gives at the white balance
+/// gains of the last frame.
 pub struct TunedColour {
     pub tuning: &'static Tuning,
     contrast: ContrastTable,
+    sensor_crop: Option<SensorCrop>,
     at_gains: Option<AtGains>,
 }
 
@@ -139,19 +143,21 @@ struct AtGains {
 }
 
 impl TunedColour {
-    pub fn new(tuning: &'static Tuning) -> TunedColour {
+    pub fn new(tuning: &'static Tuning, sensor_crop: Option<SensorCrop>) -> TunedColour {
         TunedColour {
             tuning,
             contrast: ContrastTable::new(tuning),
+            sensor_crop,
             at_gains: None,
         }
     }
 }
 
 /// `raw` through `tuned`'s colour path as `conversion` asks, into `images`
-/// through `buffers`, at the colour temperature of `gains`, with the colour
-/// correction matrix and the chroma denoise as `settings` switch them.
-/// `tuned` keeps what the tuning gives at `gains` for the next frame's.
+/// through `buffers`, at the colour temperature of `gains`, the lens shading
+/// cropped to where the sensor reads, with the colour correction matrix and
+/// the chroma denoise as `settings` switch them. `tuned` keeps what the
+/// tuning gives at `gains` for the next frame's.
 pub fn develop_tuned(
     raw: &RawFrame,
     conversion: &Conversion,
@@ -161,13 +167,17 @@ pub fn develop_tuned(
     images: Images,
     buffers: &mut colour::Buffers,
 ) -> Measures {
-    let tuning = tuned.tuning;
+    let (tuning, sensor_crop) = (tuned.tuning, tuned.sensor_crop);
     let kept = tuned.at_gains.take().filter(|kept| kept.gains == gains);
     let at_gains = tuned.at_gains.insert(kept.unwrap_or_else(|| {
         let kelvin = tuning.colour_temperature(gains);
+        let shading = tuning.lens_shading(kelvin);
         AtGains {
             gains,
-            shading: tuning.lens_shading(kelvin),
+            shading: match sensor_crop {
+                Some(sensor_crop) => shading.cropped(&sensor_crop),
+                None => shading,
+            },
             matrix: tuning.colour_matrix(kelvin),
         }
     }));
@@ -193,22 +203,21 @@ pub(crate) mod tests {
     use super::*;
     use crate::bands::Nv12Target;
     use crate::bayer::tests::padded_packed12;
-    use crate::bayer::Layout;
+    use crate::fixtures::{packed12_frame, rgb_only, xorshift};
     use crate::nv12::{self, Nv12Layout};
     use crate::scale;
+    use crate::sensor::Rectangle;
     use crate::tuning::imx477;
+    use crate::white_balance;
 
     // Noise over a gradient down and across, so that every row differs.
     pub(crate) fn samples(width: usize, height: usize) -> Vec<u16> {
-        let mut state = 0x2545_f491u32;
+        let mut noise = xorshift(0x2545_f491);
         (0..width * height)
             .map(|i| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
                 let (x, y) = (i % width, i / width);
                 let gradient = (y * 2400 / height + x * 600 / width) as u32;
-                (200 + gradient + state % 900).min(4095) as u16
+                (200 + gradient + noise() % 900).min(4095) as u16
             })
             .collect()
     }
@@ -247,7 +256,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_frame_converts_to_the_same_image_and_measures_on_any_number_of_threads() {
-        let mut tuned = TunedColour::new(&imx477::TUNING);
+        let mut tuned = TunedColour::new(&imx477::TUNING, None);
         let tone = Tone::with_sample_bits(256, 2.2, 12);
         let gains = Gains {
             red: 2.1,
@@ -284,13 +293,7 @@ pub(crate) mod tests {
         for ((width, height), output, rotate_180, path, expected) in pinned {
             let stride = width * 3 / 2 + 6;
             let raw = padded_packed12(&samples(width, height), width, stride);
-            let frame = RawFrame {
-                raw: &raw,
-                width,
-                height,
-                row_stride: stride,
-                layout: Layout::Packed12,
-            };
+            let frame = packed12_frame(&raw, width, stride);
             let settings = ColourSettings {
                 denoise: !matches!(path, Path::Undenoised),
                 ..ColourSettings::for_sensor(SensorModel::Imx477)
@@ -311,11 +314,7 @@ pub(crate) mod tests {
                         &tone,
                         gains,
                         &conversion,
-                        Images {
-                            rgb: &mut rgb,
-                            averaged: None,
-                            nv12: None,
-                        },
+                        rgb_only(&mut rgb),
                         &mut bayer::Buffers::default(),
                     ),
                     _ => develop_tuned(
@@ -324,11 +323,7 @@ pub(crate) mod tests {
                         &settings,
                         gains,
                         &mut tuned,
-                        Images {
-                            rgb: &mut rgb,
-                            averaged: None,
-                            nv12: None,
-                        },
+                        rgb_only(&mut rgb),
                         &mut colour::Buffers::default(),
                     ),
                 };
@@ -342,17 +337,115 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_still_scene_under_automatic_white_balance_keeps_the_tuning_at_its_gains() {
+        let (width, height) = (24, 46);
+        let stride = width * 3 / 2 + 6;
+        let conversion = Conversion {
+            output: Output::Full,
+            rotate_180: false,
+            channel_means: true,
+            green_mean: false,
+            row_step: MEASURED_ROW_STEP,
+            threads: 1,
+        };
+        let settings = ColourSettings::for_sensor(SensorModel::Imx477);
+        let mut tuned = TunedColour::new(&imx477::TUNING, None);
+        let mut buffers = colour::Buffers::default();
+        let mut gains = settings.gains();
+        let mut kept = Vec::new();
+        // The same scene with a little noise from one frame to the next.
+        for frame in 0..6 {
+            let samples: Vec<u16> = (samples(width, height).iter())
+                .map(|sample| sample + frame % 3)
+                .collect();
+            let raw = padded_packed12(&samples, width, stride);
+            let frame = packed12_frame(&raw, width, stride);
+            let before = tuned.at_gains.as_ref().map(|at_gains| at_gains.gains);
+            let mut rgb = Vec::new();
+            let images = rgb_only(&mut rgb);
+            let measures = develop_tuned(
+                &frame,
+                &conversion,
+                &settings,
+                gains,
+                &mut tuned,
+                images,
+                &mut buffers,
+            );
+            kept.push(before == Some(gains));
+            gains = white_balance::grey_world(measures.channel_means.unwrap(), gains);
+        }
+
+        // Computed at the settings' gains, then at the scene's, then kept.
+        assert_eq!(kept, [false, false, true, true, true, true]);
+    }
+
+    #[test]
+    fn a_cropped_sensor_develops_through_the_lens_shading_of_its_crop() {
+        let (width, height) = (24, 46);
+        let stride = width * 3 / 2 + 6;
+        let raw = padded_packed12(&samples(width, height), width, stride);
+        let frame = packed12_frame(&raw, width, stride);
+        let conversion = Conversion {
+            output: Output::Full,
+            rotate_180: false,
+            channel_means: false,
+            green_mean: false,
+            row_step: MEASURED_ROW_STEP,
+            threads: 1,
+        };
+        let settings = ColourSettings::for_sensor(SensorModel::Imx477);
+        let bounds = Rectangle {
+            left: 8,
+            top: 16,
+            width: 4056,
+            height: 3040,
+        };
+        let centre = Rectangle {
+            left: 1048,
+            top: 976,
+            width: 2028,
+            height: 1080,
+        };
+        let developed = |sensor_crop| {
+            let mut rgb = Vec::new();
+            let images = rgb_only(&mut rgb);
+            let gains = Gains {
+                red: 2.1,
+                blue: 1.6,
+            };
+            let mut tuned = TunedColour::new(&imx477::TUNING, sensor_crop);
+            let mut buffers = colour::Buffers::default();
+            develop_tuned(
+                &frame,
+                &conversion,
+                &settings,
+                gains,
+                &mut tuned,
+                images,
+                &mut buffers,
+            );
+            rgb
+        };
+        let whole = Some(SensorCrop {
+            crop: bounds,
+            bounds,
+        });
+        let cropped = Some(SensorCrop {
+            crop: centre,
+            bounds,
+        });
+
+        assert!(developed(whole) == developed(None));
+        assert!(developed(cropped) != developed(None));
+    }
+
+    #[test]
     fn a_frame_after_a_change_of_gains_is_the_one_a_fresh_tuning_makes() {
         let (width, height) = (24, 46);
         let stride = width * 3 / 2 + 6;
         let raw = padded_packed12(&samples(width, height), width, stride);
-        let frame = RawFrame {
-            raw: &raw,
-            width,
-            height,
-            row_stride: stride,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, width, stride);
         let conversion = Conversion {
             output: Output::Full,
             rotate_180: false,
@@ -364,11 +457,7 @@ pub(crate) mod tests {
         let settings = ColourSettings::for_sensor(SensorModel::Imx477);
         let developed = |tuned: &mut TunedColour, red: f64, blue: f64| {
             let mut rgb = Vec::new();
-            let images = Images {
-                rgb: &mut rgb,
-                averaged: None,
-                nv12: None,
-            };
+            let images = rgb_only(&mut rgb);
             let gains = Gains { red, blue };
             let mut buffers = colour::Buffers::default();
             let measures = develop_tuned(
@@ -382,8 +471,8 @@ pub(crate) mod tests {
             );
             outcome(&rgb, measures)
         };
-        let fresh = |red, blue| developed(&mut TunedColour::new(&imx477::TUNING), red, blue);
-        let mut kept = TunedColour::new(&imx477::TUNING);
+        let fresh = |red, blue| developed(&mut TunedColour::new(&imx477::TUNING, None), red, blue);
+        let mut kept = TunedColour::new(&imx477::TUNING, None);
         for (red, blue) in [(2.1, 1.6), (2.1, 1.6), (1.4, 2.3), (1.4, 1.6), (2.1, 1.6)] {
             assert!(
                 developed(&mut kept, red, blue) == fresh(red, blue),
@@ -395,7 +484,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_frame_converted_on_several_threads_is_the_one_converted_on_one() {
-        let mut tuned = TunedColour::new(&imx477::TUNING);
+        let mut tuned = TunedColour::new(&imx477::TUNING, None);
         let tone = Tone::with_sample_bits(256, 2.2, 12);
         let gains = Gains {
             red: 2.1,
@@ -406,13 +495,7 @@ pub(crate) mod tests {
         for (width, height) in [(24, 46), (24, 50), (32, 22), (36, 6)] {
             let stride = width * 3 / 2 + 6;
             let raw = padded_packed12(&samples(width, height), width, stride);
-            let frame = RawFrame {
-                raw: &raw,
-                width,
-                height,
-                row_stride: stride,
-                layout: Layout::Packed12,
-            };
+            let frame = packed12_frame(&raw, width, stride);
             for output in [Output::Full, Output::Half] {
                 for rotate_180 in [false, true] {
                     for (denoise, ccm) in [(true, true), (false, true), (true, false)] {
@@ -441,11 +524,7 @@ pub(crate) mod tests {
                                 &settings,
                                 gains,
                                 &mut tuned,
-                                Images {
-                                    rgb: &mut rgb,
-                                    averaged: None,
-                                    nv12: None,
-                                },
+                                rgb_only(&mut rgb),
                                 &mut buffers,
                             );
                             let tuned = outcome(&rgb, measures);
@@ -454,11 +533,7 @@ pub(crate) mod tests {
                                 &tone,
                                 gains,
                                 &conversion,
-                                Images {
-                                    rgb: &mut rgb,
-                                    averaged: None,
-                                    nv12: None,
-                                },
+                                rgb_only(&mut rgb),
                                 &mut fallback,
                             );
                             (tuned, outcome(&rgb, measures))
@@ -485,7 +560,7 @@ pub(crate) mod tests {
         images: Images,
         (buffers, fallback): &mut (colour::Buffers, bayer::Buffers),
     ) -> Measures {
-        let mut tuned = TunedColour::new(&imx477::TUNING);
+        let mut tuned = TunedColour::new(&imx477::TUNING, None);
         let tone = Tone::with_sample_bits(256, 2.2, 12);
         let gains = Gains {
             red: 2.1,
@@ -509,13 +584,7 @@ pub(crate) mod tests {
         for (width, height) in [(24, 46), (24, 44), (32, 52), (36, 12), (36, 6)] {
             let stride = width * 3 / 2 + 6;
             let raw = padded_packed12(&samples(width, height), width, stride);
-            let frame = RawFrame {
-                raw: &raw,
-                width,
-                height,
-                row_stride: stride,
-                layout: Layout::Packed12,
-            };
+            let frame = packed12_frame(&raw, width, stride);
             for output in [Output::Full, Output::Half] {
                 let (output_width, output_height) = output.size(width as u32, height as u32);
                 if output_height % 2 != 0 {
@@ -535,11 +604,7 @@ pub(crate) mod tests {
                                 row_step: MEASURED_ROW_STEP,
                                 threads,
                             };
-                            let images = Images {
-                                rgb: &mut alone,
-                                averaged: None,
-                                nv12: None,
-                            };
+                            let images = rgb_only(&mut alone);
                             let measures =
                                 develop_along(path, &frame, &conversion, images, &mut buffers);
                             let expected = outcome(&alone, measures);
@@ -576,13 +641,7 @@ pub(crate) mod tests {
         for (width, height) in [(24, 46), (24, 44), (32, 52), (36, 12), (36, 8)] {
             let stride = width * 3 / 2 + 6;
             let raw = padded_packed12(&samples(width, height), width, stride);
-            let frame = RawFrame {
-                raw: &raw,
-                width,
-                height,
-                row_stride: stride,
-                layout: Layout::Packed12,
-            };
+            let frame = packed12_frame(&raw, width, stride);
             for output in [Output::Full, Output::Half] {
                 let (output_width, output_height) = output.size(width as u32, height as u32);
                 let (output_width, output_height) = (output_width as usize, output_height as usize);
@@ -618,11 +677,7 @@ pub(crate) mod tests {
                                 row_step: MEASURED_ROW_STEP,
                                 threads,
                             };
-                            let images = Images {
-                                rgb: &mut alone,
-                                averaged: None,
-                                nv12: None,
-                            };
+                            let images = rgb_only(&mut alone);
                             let measures =
                                 develop_along(path, &frame, &conversion, images, &mut buffers);
                             let expected = outcome(&alone, measures);
@@ -659,13 +714,7 @@ pub(crate) mod tests {
         let (width, height) = (2028, 1520);
         let stride = width * 3 / 2;
         let raw = padded_packed12(&samples(width, height), width, stride);
-        let frame = RawFrame {
-            raw: &raw,
-            width,
-            height,
-            row_stride: stride,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, width, stride);
         let conversion = Conversion {
             output: Output::Full,
             rotate_180: false,

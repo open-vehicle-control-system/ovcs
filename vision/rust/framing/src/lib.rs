@@ -6,7 +6,7 @@ pub mod output_flag;
 
 use std::fs::File;
 use std::io::{self, IoSlice, Read, Write};
-use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, RawFd};
 use std::sync::{Arc, Mutex, TryLockError};
 use std::time::{Duration, Instant};
 
@@ -22,6 +22,9 @@ const TAG_OUTPUT_H264: u8 = 9;
 const KEY_FRAME_FLAG: u8 = 1;
 
 pub const METADATA_FIELDS: usize = 8;
+
+/// The longest request a Port takes: above any camera's whole RGB frame.
+pub const MAX_REQUEST_BYTES: usize = 64 << 20;
 
 /// How long a panic waits for the thread writing a record before it gives up its own.
 const PANIC_LOCK_WAIT: Duration = Duration::from_millis(500);
@@ -66,10 +69,47 @@ pub fn read_record<R: Read>(reader: &mut R, max_bytes: usize) -> io::Result<Opti
     Ok(read_body_into(reader, length, &mut body)?.then_some(body))
 }
 
+/// The requests a Port reads from `input`, each into one buffer reused from the
+/// one before.
+pub struct Requests<R> {
+    input: R,
+    max_bytes: usize,
+    record: Vec<u8>,
+}
+
+impl<R: Read> Requests<R> {
+    /// Requests of at most `max_bytes` each.
+    pub fn new(input: R, max_bytes: usize) -> Requests<R> {
+        Requests {
+            input,
+            max_bytes,
+            record: Vec::new(),
+        }
+    }
+
+    /// The next request, valid until the next read. `None` once the input
+    /// closes, at a request or within one; an error for a failed read or a
+    /// request over `max_bytes`.
+    pub fn read(&mut self) -> io::Result<Option<&[u8]>> {
+        self.read_timed(|| {})
+    }
+
+    /// `read`, calling `arrived` once the request's length is in, before its body
+    /// is read.
+    pub fn read_timed(&mut self, arrived: impl FnOnce()) -> io::Result<Option<&[u8]>> {
+        let Some(length) = read_length(&mut self.input, self.max_bytes)? else {
+            return Ok(None);
+        };
+        arrived();
+        let complete = read_body_into(&mut self.input, length, &mut self.record)?;
+        Ok(complete.then_some(&self.record[..]))
+    }
+}
+
 /// Waits for the next record's length prefix. `None` on clean EOF or a
 /// truncated prefix; an error for a length over `max_bytes`, which no record
 /// of the Port's has: the stream is out of step.
-pub fn read_length<R: Read>(reader: &mut R, max_bytes: usize) -> io::Result<Option<usize>> {
+fn read_length<R: Read>(reader: &mut R, max_bytes: usize) -> io::Result<Option<usize>> {
     let mut prefix = [0u8; 4];
     if !read_exact_or_eof(reader, &mut prefix)? {
         return Ok(None);
@@ -86,11 +126,7 @@ pub fn read_length<R: Read>(reader: &mut R, max_bytes: usize) -> io::Result<Opti
 
 /// Reads a record's body of `length` bytes into `body` in place of its
 /// contents, reusing its allocation. `false` on a truncated body.
-pub fn read_body_into<R: Read>(
-    reader: &mut R,
-    length: usize,
-    body: &mut Vec<u8>,
-) -> io::Result<bool> {
+fn read_body_into<R: Read>(reader: &mut R, length: usize, body: &mut Vec<u8>) -> io::Result<bool> {
     body.resize(length, 0);
     read_exact_or_eof(reader, body)
 }
@@ -103,10 +139,22 @@ fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Result<b
     }
 }
 
-/// Whether the other end of the pipe `descriptor` reads from has closed, as
-/// the host does when it closes the Port: a program waiting at startup stops
-/// then instead of holding its devices.
-pub fn hung_up(descriptor: BorrowedFd<'_>) -> bool {
+/// `Err(BrokenPipe)` once the host has closed stdin, as it does when it closes
+/// the Port: a program waiting at startup stops then instead of holding its
+/// devices.
+pub fn host_present() -> io::Result<()> {
+    if hung_up(io::stdin().as_fd()) {
+        Err(io::Error::new(
+            io::ErrorKind::BrokenPipe,
+            "the host closed stdin",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// Whether the other end of the pipe `descriptor` reads from has closed.
+fn hung_up(descriptor: BorrowedFd<'_>) -> bool {
     let mut polled = PollDescriptor {
         fd: descriptor.as_raw_fd(),
         events: 0,
@@ -128,6 +176,13 @@ pub fn enlarge_pipe(descriptor: BorrowedFd<'_>, bytes: usize) -> io::Result<usiz
         }
     };
     set(i32::try_from(bytes).unwrap_or(i32::MAX)).or_else(|_| set(UNPRIVILEGED_PIPE_BYTES))
+}
+
+/// Ends the program `name` with `status` on a failure before stdout carries
+/// records, its message on stderr.
+pub fn exit_early(name: &str, message: &str, status: i32) -> ! {
+    eprintln!("{name}: {message}");
+    std::process::exit(status)
 }
 
 /// Record output on the real stdout. Libraries that print to stdout would
@@ -190,6 +245,13 @@ impl Writer {
             }
             report(info);
         }));
+    }
+
+    /// Sends `message` as a LOG record, which the Port's driver hands to the
+    /// Logger: the Port does not read stderr. A failed write is dropped, the host
+    /// that would read it being gone.
+    pub fn log(&self, level: LogLevel, message: &str) {
+        let _ = self.write_record(&log_record(level, message));
     }
 
     /// Writes one record. Safe to call from several threads.
@@ -324,6 +386,18 @@ pub fn metadata_record(capture_ns: i64, present: u8, values: &[f64; METADATA_FIE
     record
 }
 
+/// The start of a PAIR record, which the left then the right 8-bit grey
+/// frame of `width` x `height` follow, row-major.
+pub fn pair_header(width: u16, height: u16, left_ns: i64, right_ns: i64) -> [u8; 21] {
+    let mut header = [0; 21];
+    header[0] = TAG_PAIR;
+    header[1..3].copy_from_slice(&width.to_le_bytes());
+    header[3..5].copy_from_slice(&height.to_le_bytes());
+    header[5..13].copy_from_slice(&left_ns.to_le_bytes());
+    header[13..].copy_from_slice(&right_ns.to_le_bytes());
+    header
+}
+
 /// Two 8-bit grey frames of `width` x `height`, row-major, with their start times.
 pub fn pair_record(
     width: u16,
@@ -333,15 +407,12 @@ pub fn pair_record(
     left: &[u8],
     right: &[u8],
 ) -> Vec<u8> {
-    let mut record = Vec::with_capacity(21 + left.len() + right.len());
-    record.push(TAG_PAIR);
-    record.extend_from_slice(&width.to_le_bytes());
-    record.extend_from_slice(&height.to_le_bytes());
-    record.extend_from_slice(&left_ns.to_le_bytes());
-    record.extend_from_slice(&right_ns.to_le_bytes());
-    record.extend_from_slice(left);
-    record.extend_from_slice(right);
-    record
+    [
+        &pair_header(width, height, left_ns, right_ns)[..],
+        left,
+        right,
+    ]
+    .concat()
 }
 
 #[cfg(test)]
@@ -349,14 +420,18 @@ mod tests {
     use super::*;
     use std::os::fd::AsFd;
 
-    #[test]
-    fn a_pipe_hangs_up_once_its_writing_end_closes() {
+    // A pipe's reading and writing ends.
+    fn pipe() -> (File, File) {
         let mut ends = [0; 2];
         // SAFETY: `ends` has room for the two descriptors.
         assert_eq!(unsafe { libc_pipe(ends.as_mut_ptr()) }, 0);
         // SAFETY: both descriptors were just created and nothing else owns them.
-        let (pipe_out, pipe_in) =
-            unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) };
+        unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) }
+    }
+
+    #[test]
+    fn a_pipe_hangs_up_once_its_writing_end_closes() {
+        let (pipe_out, pipe_in) = pipe();
 
         assert!(!hung_up(pipe_out.as_fd()));
         drop(pipe_in);
@@ -365,12 +440,7 @@ mod tests {
 
     #[test]
     fn a_pipe_is_enlarged_to_the_size_asked_or_to_one_mebibyte() {
-        let mut ends = [0; 2];
-        // SAFETY: `ends` has room for the two descriptors.
-        assert_eq!(unsafe { libc_pipe(ends.as_mut_ptr()) }, 0);
-        // SAFETY: both descriptors were just created and nothing else owns them.
-        let (pipe_out, _pipe_in) =
-            unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) };
+        let (pipe_out, _pipe_in) = pipe();
 
         assert_eq!(
             enlarge_pipe(pipe_out.as_fd(), 256 << 10).unwrap(),
@@ -385,12 +455,7 @@ mod tests {
 
     // A writer and the end its records are read from.
     fn piped_writer() -> (Writer, File) {
-        let mut ends = [0; 2];
-        // SAFETY: `ends` has room for the two descriptors.
-        assert_eq!(unsafe { libc_pipe(ends.as_mut_ptr()) }, 0);
-        // SAFETY: both descriptors were just created and nothing else owns them.
-        let (pipe_out, pipe_in) =
-            unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) };
+        let (pipe_out, pipe_in) = pipe();
         (Writer::from_file(pipe_in), pipe_out)
     }
 
@@ -467,7 +532,16 @@ mod tests {
     }
 
     #[test]
-    fn frame_record_matches_cpp_layout() {
+    fn a_log_is_written_as_a_log_record() {
+        let (writer, mut pipe_out) = piped_writer();
+        writer.log(LogLevel::Warning, "hi");
+        drop(writer);
+        let record = read_record(&mut pipe_out, 1 << 10).unwrap();
+        assert_eq!(record, Some(log_record(LogLevel::Warning, "hi")));
+    }
+
+    #[test]
+    fn frame_record_layout() {
         let got = frame_record(0x0102, 0x0304, 0x0807060504030201, &[0xaa, 0xbb]);
         let want = [
             1, 0x02, 0x01, 0x04, 0x03, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 2, 0, 0, 0,
@@ -477,13 +551,13 @@ mod tests {
     }
 
     #[test]
-    fn log_record_matches_cpp_layout() {
+    fn log_record_layout() {
         assert_eq!(log_record(LogLevel::Warning, "hi"), [2, 1, b'h', b'i']);
         assert_eq!(log_record(LogLevel::Error, ""), [2, 2]);
     }
 
     #[test]
-    fn metadata_record_matches_cpp_layout() {
+    fn metadata_record_layout() {
         let values = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -2.0];
         let got = metadata_record(-1, 0x81, &values);
         let mut want = vec![3, 0x81];
@@ -501,6 +575,7 @@ mod tests {
             4, 2, 0, 1, 0, 5, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4,
         ];
         assert_eq!(got, want);
+        assert_eq!(pair_header(2, 1, 5, 6), want[..21]);
     }
 
     #[test]
@@ -562,6 +637,66 @@ mod tests {
         );
         let mut input: &[u8] = &[0xff, 0xff, 0xff, 0xff];
         assert!(read_length(&mut input, 64 << 20).is_err());
+    }
+
+    /// Gives `bytes`, then fails every read.
+    struct Broken(&'static [u8]);
+
+    impl Read for Broken {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            if self.0.is_empty() {
+                return Err(io::Error::other("input gone"));
+            }
+            self.0.read(buffer)
+        }
+    }
+
+    #[test]
+    fn requests_are_read_in_order_until_the_input_closes() {
+        let mut requests = Requests::new(&[0, 0, 0, 2, 9, 8, 0, 0, 0, 1, 7][..], 16);
+        assert_eq!(requests.read().unwrap(), Some(&[9, 8][..]));
+        assert_eq!(requests.read().unwrap(), Some(&[7][..]));
+        assert_eq!(requests.read().unwrap(), None);
+    }
+
+    #[test]
+    fn a_failed_read_is_an_error_not_the_end_of_the_requests() {
+        let mut requests = Requests::new(Broken(&[0, 0, 0, 1, 7]), 16);
+        assert_eq!(requests.read().unwrap(), Some(&[7][..]));
+        let error = requests.read().unwrap_err();
+        assert_eq!(error.to_string(), "input gone");
+    }
+
+    #[test]
+    fn a_request_cut_short_ends_the_requests_as_a_closed_input_does() {
+        let mut requests = Requests::new(&[0, 0, 0, 3, 1, 2][..], 16);
+        assert_eq!(requests.read().unwrap(), None);
+    }
+
+    #[test]
+    fn a_request_over_the_largest_taken_is_an_error() {
+        let mut requests = Requests::new(&[0, 0, 0, 5, 1, 2, 3, 4, 5][..], 4);
+        assert_eq!(
+            requests.read().unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn a_request_is_read_into_the_buffer_of_the_one_before() {
+        let mut requests = Requests::new(&[0, 0, 0, 3, 1, 2, 3, 0, 0, 0, 2, 4, 5][..], 16);
+        let first = requests.read().unwrap().unwrap().as_ptr();
+        let second = requests.read().unwrap().unwrap();
+        assert_eq!(second, [4, 5]);
+        assert_eq!(second.as_ptr(), first);
+    }
+
+    #[test]
+    fn the_arrival_of_a_request_is_noted_before_its_body_is_read() {
+        let mut requests = Requests::new(Broken(&[0, 0, 0, 2]), 16);
+        let mut arrived = false;
+        assert!(requests.read_timed(|| arrived = true).is_err());
+        assert!(arrived);
     }
 
     #[test]

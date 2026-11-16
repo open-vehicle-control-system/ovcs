@@ -11,7 +11,7 @@ pub enum Role {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Stream {
+pub struct AskedStream {
     pub role: Role,
     pub width: u32,
     pub height: u32,
@@ -20,7 +20,7 @@ pub struct Stream {
 /// The streams in the order libcamera is given them, and which is which.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StreamPlan {
-    pub streams: Vec<Stream>,
+    pub streams: Vec<AskedStream>,
     /// The index of the stream the FRAME or GREY_FRAME records are made from.
     pub frames: usize,
     /// The index of the ISP output's stream.
@@ -31,13 +31,13 @@ pub struct StreamPlan {
 /// second as the view finder: the order the Pi 5's PiSP pipeline is known to
 /// take for an ISP output larger than the frames.
 pub fn plan(arguments: &Arguments) -> StreamPlan {
-    let frames = |role| Stream {
+    let frames = |role| AskedStream {
         role,
         width: arguments.width,
         height: arguments.height,
     };
     let isp_output = arguments.outputs.iter().find_map(|spec| match *spec {
-        OutputSpec::Isp { width, height } => Some(Stream {
+        OutputSpec::Isp { width, height } => Some(AskedStream {
             role: Role::VideoRecording,
             width,
             height,
@@ -73,7 +73,7 @@ mod tests {
         assert_eq!(
             plan_of(&["--width", "480", "--height", "270", "--format", "grey"]),
             StreamPlan {
-                streams: vec![Stream {
+                streams: vec![AskedStream {
                     role: Role::VideoRecording,
                     width: 480,
                     height: 270
@@ -101,12 +101,12 @@ mod tests {
             ]),
             StreamPlan {
                 streams: vec![
-                    Stream {
+                    AskedStream {
                         role: Role::VideoRecording,
                         width: 1152,
                         height: 648
                     },
-                    Stream {
+                    AskedStream {
                         role: Role::ViewFinder,
                         width: 480,
                         height: 270

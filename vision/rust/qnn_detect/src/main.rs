@@ -14,7 +14,8 @@
 //! sequence, the image's size, 1 (grey) or 3 (RGB) channels and its pixels;
 //! the reply the detections in the image's pixels and, when the graph ran, its
 //! time on the HTP from QNN's profile, or the wall time around its execution
-//! when the profile is unavailable; or a LOG record.
+//! when the profile is unavailable; or a LOG record. A failed execution is answered with no
+//! detections, then the program exits, so its driver reopens it.
 //! Every minute, a LOG record gives each stage's mean time per request (`qnn::StageTimes`).
 
 mod model;
@@ -23,11 +24,11 @@ mod yolox;
 use std::process::exit;
 use std::time::Instant;
 
-use detection::letterbox::{letterbox_for, letterbox_into, Frame};
+use detection::letterbox::{letterbox_for, letterbox_into};
 use detection::protocol::{detections_record, inference_micros, parse_request};
 use framing::{LogLevel, Writer};
 use model::Layout;
-use qnn::port::{self, Clock, Start};
+use qnn::port::{self, Answer, Clock, Start};
 use qnn::{Power, TimeLog};
 use yolox::{decode, Outputs, MODEL_SIZE};
 
@@ -49,15 +50,18 @@ fn main() {
         writer,
     } = port::start(NAME, USAGE);
     let Some(context_path) = arguments.first() else {
-        port::exit_early(NAME, USAGE, 2);
+        framing::exit_early(NAME, USAGE, 2);
     };
-    let score_threshold = match arguments.get(1).map(|s| s.parse::<f32>()) {
+    let score_threshold = match arguments
+        .get(1)
+        .map(|value| detection::score_threshold(value))
+    {
         None => DEFAULT_SCORE_THRESHOLD,
         Some(Ok(threshold)) => threshold,
-        Some(Err(_)) => port::exit_early(NAME, &format!("bad score threshold {}", arguments[1]), 2),
+        Some(Err(message)) => framing::exit_early(NAME, &message, 2),
     };
     if let Err(message) = run(context_path, score_threshold, power, &writer) {
-        port::log(&writer, LogLevel::Error, &message);
+        writer.log(LogLevel::Error, &message);
         exit(1);
     }
 }
@@ -78,9 +82,7 @@ fn run(
         classes,
     } = model::layout(&model.inputs, &model.outputs)?;
 
-    port::log(
-        writer,
-        LogLevel::Info,
+    writer.log(LogLevel::Info,
         &format!(
             "ready: {context_path}, graph {}, input {:?}, outputs {:?}, \
              boxes {box_quantisation:?}, scores {score_quantisation:?}, threshold {score_threshold}",
@@ -104,33 +106,20 @@ fn run(
     let mut clock = Clock::new("letterbox", "decode", Instant::now());
     let mut stdin = std::io::stdin().lock();
     port::serve(&mut stdin, writer, &mut clock, |record, clock| {
-        let request = parse_request(record)?;
+        let Some(request) = parse_request(record) else {
+            return Answer::Nothing;
+        };
         let (width, height) = (i32::from(request.width), i32::from(request.height));
         let letterbox = letterbox_for(width, height, MODEL_SIZE);
         let (detections, time) = match request.check() {
             Err(message) => {
-                port::log(writer, LogLevel::Warning, &message);
+                writer.log(LogLevel::Warning, &message);
                 (Vec::new(), None)
             }
-            Ok(()) => {
-                letterbox_into(
-                    &Frame {
-                        pixels: request.pixels,
-                        width,
-                        height,
-                        channels: request.channels,
-                    },
-                    &mut input,
-                    MODEL_SIZE,
-                    &letterbox,
-                    LETTERBOX_THREADS,
-                );
+            Ok(frame) => {
+                letterbox_into(&frame, &mut input, &letterbox, LETTERBOX_THREADS);
                 clock.prepared();
-                let mut outputs: Vec<&mut [u8]> = buffers
-                    .iter_mut()
-                    .map(|buffer| buffer.as_mut_slice())
-                    .collect();
-                match model.execute(&mut [input.as_mut_slice()], &mut outputs) {
+                match model.execute(&mut [input.as_mut_slice()], &mut buffers) {
                     Ok(timing) => {
                         port::log_execution(writer, &mut model, &mut time_log, &timing);
                         clock.executed(&timing);
@@ -149,16 +138,18 @@ fn run(
                         clock.finished();
                         (
                             detections,
-                            Some(inference_micros(u128::from(timing.micros))),
+                            Some(inference_micros(u128::from(timing.inference_micros))),
                         )
                     }
                     Err(message) => {
-                        port::log(writer, LogLevel::Error, &message);
-                        (Vec::new(), None)
+                        return Answer::ReplyThenExit {
+                            reply: detections_record(request.sequence, &[], None),
+                            error: format!("{message}; exiting to be reopened"),
+                        }
                     }
                 }
             }
         };
-        Some(detections_record(request.sequence, &detections, time))
+        Answer::Reply(detections_record(request.sequence, &detections, time))
     })
 }

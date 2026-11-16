@@ -3,24 +3,12 @@
 use detection::letterbox::{to_caller, Letterbox};
 use detection::nms::suppress;
 use detection::protocol::Detection;
+use qnn::Quantisation;
 
 /// The model's input side, in pixels.
 pub const MODEL_SIZE: i32 = 640;
 /// Candidate boxes YOLOX scores at a 640 input: 80², 40² and 20² cells.
 pub const ANCHORS: usize = 8400;
-
-/// An 8-bit tensor's quantisation: a value `q` stands for `(q - zero_point) × scale`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Quantisation {
-    pub scale: f32,
-    pub zero_point: i32,
-}
-
-impl Quantisation {
-    pub fn real(self, q: u8) -> f32 {
-        (i32::from(q) - self.zero_point) as f32 * self.scale
-    }
-}
 
 /// The graph's outputs for one image: `[x0, y0, x1, y1]` per anchor in model
 /// pixels, a score and a class per anchor.
@@ -72,11 +60,11 @@ mod tests {
 
     const BOXES: Quantisation = Quantisation {
         scale: 4.4165,
-        zero_point: 51,
+        offset: -51,
     };
     const SCORES: Quantisation = Quantisation {
         scale: 0.0038126,
-        zero_point: 0,
+        offset: 0,
     };
 
     #[test]

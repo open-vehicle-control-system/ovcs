@@ -2,7 +2,10 @@
 //! profile, after the profiles of QAIRT's HTP backend documentation, and the RPC polling; and
 //! the command line that picks them.
 
+use std::ptr;
+
 use crate::ffi::*;
+use crate::{check, missing};
 
 /// A performance profile: the clocks a vote holds. A vote is made once and held, so the HTP
 /// stays at its corner between requests too.
@@ -54,7 +57,7 @@ pub struct Power {
 }
 
 /// A profile's DCVS_V3 vote.
-struct Vote {
+struct DcvsVote {
     sleep_latency_micros: u32,
     corner: QnnHtpPerfInfrastructure_VoltageCorner_t,
 }
@@ -83,7 +86,7 @@ impl Performance {
             .unwrap_or_default()
     }
 
-    fn vote(self) -> Option<Vote> {
+    fn dcvs_vote(self) -> Option<DcvsVote> {
         let (sleep_latency_micros, corner) = match self {
             Performance::Burst => (40, DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER),
             Performance::SustainedHighPerformance => (100, DCVS_VOLTAGE_VCORNER_TURBO),
@@ -91,7 +94,7 @@ impl Performance {
             Performance::PowerSaver => (1000, DCVS_VOLTAGE_VCORNER_SVS),
             Performance::NoVote => return None,
         };
-        Some(Vote {
+        Some(DcvsVote {
             sleep_latency_micros,
             corner,
         })
@@ -102,7 +105,7 @@ impl Power {
     /// The `setPowerConfig` calls the vote makes on the power config `id`, one config each:
     /// the DCVS_V3 vote, the RPC control latency, the RPC polling time; none for `NoVote`.
     pub(crate) fn power_configs(self, id: u32) -> Vec<QnnHtpPerfInfrastructure_PowerConfig_t> {
-        let Some(vote) = self.performance.vote() else {
+        let Some(vote) = self.performance.dcvs_vote() else {
             return Vec::new();
         };
         let dcvs = QnnHtpPerfInfrastructure_DcvsV3_t {
@@ -160,7 +163,7 @@ impl Power {
     /// What the vote holds, for the log.
     pub fn describe(self) -> String {
         let name = self.performance.name();
-        let Some(vote) = self.performance.vote() else {
+        let Some(vote) = self.performance.dcvs_vote() else {
             return format!("{name}: no power vote");
         };
         let rpc_polling = match self.rpc_polling_micros {
@@ -256,6 +259,122 @@ fn parse_rpc_polling(micros: &str) -> Result<u32, String> {
         .ok_or_else(|| {
             format!("RPC polling {micros} us is not an integer from 0 to {MAX_RPC_POLLING_MICROS}")
         })
+}
+
+/// A power config id holding a power vote, which ends when it is destroyed.
+pub(crate) struct PowerVote {
+    destroy: QnnHtpPerfInfrastructure_DestroyPowerConfigIdFn_t,
+    id: u32,
+}
+
+impl Drop for PowerVote {
+    fn drop(&mut self) {
+        if let Some(destroy) = self.destroy {
+            // SAFETY: the session destroys the vote while its library is loaded, and `id`
+            // is the one that library created.
+            unsafe { destroy(self.id) };
+        }
+    }
+}
+
+/// What voting a `Power` came to.
+#[expect(
+    dead_code,
+    reason = "a `PowerVote` is held for its drop, which ends the vote"
+)]
+pub(crate) enum Vote {
+    /// `--performance none` asks for no vote.
+    NotAsked,
+    Held(PowerVote),
+    /// The DCVS_V3 vote holds; the message names each other call that failed.
+    Partial(PowerVote, String),
+    /// No vote holds, for the reason the message gives.
+    Failed(String),
+}
+
+impl Vote {
+    /// Why the vote is missing or partial, if it is.
+    pub(crate) fn error(&self) -> Option<&str> {
+        match self {
+            Vote::NotAsked | Vote::Held(_) => None,
+            Vote::Partial(_, error) | Vote::Failed(error) => Some(error),
+        }
+    }
+}
+
+/// The calls of a power vote, in `Power::power_configs`' order.
+const POWER_CONFIG_CALLS: [&str; 3] = [
+    "setPowerConfig DCVS_V3",
+    "setPowerConfig RPC_CONTROL_LATENCY",
+    "setPowerConfig RPC_POLLING_TIME",
+];
+
+/// Votes `power` on the HTP through the device's performance infrastructure. The vote holds
+/// while the returned `Vote`'s `PowerVote` lives; there is none when the DCVS_V3 call fails.
+///
+/// # Safety
+/// `interface` is of a library still loaded, after its `deviceCreate`.
+pub(crate) unsafe fn vote(interface: &QnnInterface_ImplementationV2_39_t, power: Power) -> Vote {
+    let unvoted = |message: String| {
+        Vote::Failed(format!(
+            "{message}; the HTP runs under its default power policy"
+        ))
+    };
+    if power.performance == Performance::NoVote {
+        return Vote::NotAsked;
+    }
+    let Some(get_infrastructure) = interface.deviceGetInfrastructure else {
+        return unvoted(missing("deviceGetInfrastructure"));
+    };
+    let mut infrastructure: QnnDevice_Infrastructure_t = ptr::null_mut();
+    // QNN writes the infrastructure through the pointer its header declares const.
+    let written = ptr::addr_of_mut!(infrastructure).cast_const();
+    if let Err(message) = check("deviceGetInfrastructure", get_infrastructure(written)) {
+        return unvoted(message);
+    }
+    if infrastructure.is_null() {
+        return unvoted("deviceGetInfrastructure gave no infrastructure".to_string());
+    }
+    let htp = &*(infrastructure as *const QnnHtpDevice_Infrastructure_t);
+    if htp.infraType != QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF {
+        return unvoted(format!(
+            "the device's infrastructure is of type {}, not the HTP's performance one",
+            htp.infraType
+        ));
+    }
+    let performance_infrastructure = htp.__bindgen_anon_1.perfInfra;
+    let (Some(create), Some(set)) = (
+        performance_infrastructure.createPowerConfigId,
+        performance_infrastructure.setPowerConfig,
+    ) else {
+        return unvoted(missing("createPowerConfigId or setPowerConfig"));
+    };
+    let mut id = 0u32;
+    if let Err(message) = check("createPowerConfigId", create(0, 0, &mut id)) {
+        return unvoted(message);
+    }
+    let held = PowerVote {
+        destroy: performance_infrastructure.destroyPowerConfigId,
+        id,
+    };
+    let mut failures = Vec::new();
+    for (config, call) in power.power_configs(id).iter().zip(POWER_CONFIG_CALLS) {
+        let mut configs = [
+            config as *const QnnHtpPerfInfrastructure_PowerConfig_t,
+            ptr::null(),
+        ];
+        if let Err(message) = check(call, set(id, configs.as_mut_ptr())) {
+            if call == POWER_CONFIG_CALLS[0] {
+                return unvoted(message);
+            }
+            failures.push(message);
+        }
+    }
+    if failures.is_empty() {
+        Vote::Held(held)
+    } else {
+        Vote::Partial(held, failures.join(", "))
+    }
 }
 
 #[cfg(test)]

@@ -13,7 +13,8 @@
 //! carries an RGB image and a band of its rows; the band, resized to the model's input, is
 //! inferred, and the reply carries each cell's class, the highest of its scores, and, when the
 //! graph ran, its time on the HTP from QNN's profile, or the wall time around its execution when
-//! the profile is unavailable; or a LOG record.
+//! the profile is unavailable; or a LOG record. A failed execution is answered with an empty
+//! label image, then the program exits, so its driver reopens it.
 //! Every minute, a LOG record gives each stage's mean time per request (`qnn::StageTimes`).
 
 mod labels;
@@ -24,7 +25,7 @@ use std::time::Instant;
 
 use framing::{LogLevel, Writer};
 use model::Geometry;
-use qnn::port::{self, Clock, Start};
+use qnn::port::{self, Answer, Clock, Start};
 use qnn::{Power, TimeLog};
 use segmentation::band;
 use segmentation::protocol::{labels_record, parse_request};
@@ -45,12 +46,12 @@ fn main() {
     let (context_path, classes) = match &arguments[..] {
         [context_path, classes] => match classes.parse::<usize>() {
             Ok(classes) => (context_path, classes),
-            Err(_) => port::exit_early(NAME, &format!("classes: {classes} is not a count"), 2),
+            Err(_) => framing::exit_early(NAME, &format!("classes: {classes} is not a count"), 2),
         },
-        _ => port::exit_early(NAME, USAGE, 2),
+        _ => framing::exit_early(NAME, USAGE, 2),
     };
     if let Err(message) = run(context_path, classes, power, &writer) {
-        port::log(&writer, LogLevel::Error, &message);
+        writer.log(LogLevel::Error, &message);
         exit(1);
     }
 }
@@ -71,8 +72,7 @@ fn run(
         classes,
     } = model::geometry(&model.inputs, &model.outputs, expected_classes)?;
 
-    port::log(
-        writer,
+    writer.log(
         LogLevel::Info,
         &format!(
             "ready: {context_path}, graph {}, input {} {:?} quantisation {:?}, output {} {:?} \
@@ -80,10 +80,10 @@ fn run(
             model.graph_name,
             model.inputs[0].name,
             model.inputs[0].dimensions,
-            model.inputs[0].scale_offset,
+            model.inputs[0].quantisation,
             model.outputs[0].name,
             model.outputs[0].dimensions,
-            model.outputs[0].scale_offset,
+            model.outputs[0].quantisation,
         ),
     );
 
@@ -94,11 +94,13 @@ fn run(
     let mut clock = Clock::new("resize", "argmax", Instant::now());
     let mut stdin = std::io::stdin().lock();
     port::serve(&mut stdin, writer, &mut clock, |record, clock| {
-        let request = parse_request(record)?;
+        let Some(request) = parse_request(record) else {
+            return Answer::Nothing;
+        };
         let unanswered = || labels_record(request.sequence, 0, 0, &[], None);
         let reply = match request.check() {
             Err(message) => {
-                port::log(writer, LogLevel::Warning, &message);
+                writer.log(LogLevel::Warning, &message);
                 unanswered()
             }
             Ok(()) => {
@@ -124,16 +126,18 @@ fn run(
                             output_width,
                             output_height,
                             &labels,
-                            Some(timing.micros),
+                            Some(timing.inference_micros),
                         )
                     }
                     Err(message) => {
-                        port::log(writer, LogLevel::Error, &message);
-                        unanswered()
+                        return Answer::ReplyThenExit {
+                            reply: unanswered(),
+                            error: format!("{message}; exiting to be reopened"),
+                        }
                     }
                 }
             }
         };
-        Some(reply)
+        Answer::Reply(reply)
     })
 }

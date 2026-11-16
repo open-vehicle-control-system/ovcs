@@ -1,10 +1,16 @@
-//! The model's shape check: one 640x640 uint8 RGB image of pixel values in, unquantised or
-//! quantised with a scale of 1/255 and an offset of 0, and YOLOX's three uint8 outputs,
-//! `boxes` and `scores` quantised, `class_idx` a class per anchor.
+//! The model's shape check: one `[1, 640, 640, 3]` uint8 RGB image of pixel values in,
+//! unquantised or quantised with a scale of 1/255 and an offset of 0, and YOLOX's three uint8
+//! outputs, `boxes` `[1, 8400, 4]` and `scores` `[1, 8400]` quantised, `class_idx` `[1, 8400]` a
+//! class per anchor.
 
-use qnn::Tensor;
+use qnn::{Quantisation, Tensor};
 
-use crate::yolox::{Quantisation, ANCHORS, MODEL_SIZE};
+use crate::yolox::{ANCHORS, MODEL_SIZE};
+
+/// The shapes of the image and of the outputs the decoding reads.
+const IMAGE_DIMENSIONS: [u32; 4] = [1, MODEL_SIZE as u32, MODEL_SIZE as u32, 3];
+const BOXES_DIMENSIONS: [u32; 3] = [1, ANCHORS as u32, 4];
+const PER_ANCHOR_DIMENSIONS: [u32; 2] = [1, ANCHORS as u32];
 
 /// Where the outputs the decoding reads are among the graph's, and how two are quantised.
 #[derive(Debug, PartialEq)]
@@ -18,55 +24,52 @@ pub struct Layout {
 
 /// The model's layout, or the message naming the input or output it cannot run on.
 pub fn layout(inputs: &[Tensor], outputs: &[Tensor]) -> Result<Layout, String> {
-    let input_bytes = (MODEL_SIZE * MODEL_SIZE * 3) as usize;
-    match inputs {
-        [input] if input.bytes == input_bytes && input.unsigned_8bit => {
-            input.check_takes_pixel_values()?
-        }
-        _ => {
-            return Err(format!(
-                "the model takes {} inputs, not one {MODEL_SIZE}x{MODEL_SIZE} uint8 RGB image",
-                inputs.len()
-            ))
-        }
-    }
-    let boxes = output_index(outputs, "boxes", ANCHORS * 4)?;
-    let scores = output_index(outputs, "scores", ANCHORS)?;
+    let [input] = inputs else {
+        return Err(format!(
+            "the model takes {} inputs, not one {MODEL_SIZE}x{MODEL_SIZE} uint8 RGB image",
+            inputs.len()
+        ));
+    };
+    check("input", input, &IMAGE_DIMENSIONS)?;
+    input.check_takes_pixel_values()?;
+    let boxes = output_index(outputs, "boxes", &BOXES_DIMENSIONS)?;
+    let scores = output_index(outputs, "scores", &PER_ANCHOR_DIMENSIONS)?;
     Ok(Layout {
         boxes,
         box_quantisation: quantisation(&outputs[boxes])?,
         scores,
         score_quantisation: quantisation(&outputs[scores])?,
-        classes: output_index(outputs, "class_idx", ANCHORS)?,
+        classes: output_index(outputs, "class_idx", &PER_ANCHOR_DIMENSIONS)?,
     })
 }
 
-/// The output named `name`, which must hold `bytes` unsigned bytes.
-fn output_index(outputs: &[Tensor], name: &str, bytes: usize) -> Result<usize, String> {
+/// The output named `name`, which must be of unsigned bytes in `dimensions`.
+fn output_index(outputs: &[Tensor], name: &str, dimensions: &[u32]) -> Result<usize, String> {
     let index = (outputs.iter())
         .position(|tensor| tensor.name == name)
         .ok_or_else(|| format!("the model has no output {name}"))?;
-    let output = &outputs[index];
-    if output.bytes != bytes {
-        return Err(format!(
-            "output {name} holds {} bytes, not {bytes}",
-            output.bytes
-        ));
-    }
-    if !output.unsigned_8bit {
-        return Err(format!("output {name} is not uint8"));
-    }
+    check("output", &outputs[index], dimensions)?;
     Ok(index)
 }
 
+/// Whether the `kind` tensor is of unsigned bytes in `dimensions`.
+fn check(kind: &str, tensor: &Tensor, dimensions: &[u32]) -> Result<(), String> {
+    if tensor.dimensions != dimensions {
+        return Err(format!(
+            "{kind} {} is {:?}, not {dimensions:?}",
+            tensor.name, tensor.dimensions
+        ));
+    }
+    if !tensor.unsigned_8bit {
+        return Err(format!("{kind} {} is not uint8", tensor.name));
+    }
+    Ok(())
+}
+
 fn quantisation(output: &Tensor) -> Result<Quantisation, String> {
-    let (scale, offset) = output
-        .scale_offset
-        .ok_or_else(|| format!("output {} is not quantised", output.name))?;
-    Ok(Quantisation {
-        scale,
-        zero_point: -offset,
-    })
+    output
+        .quantisation
+        .ok_or_else(|| format!("output {} is not quantised", output.name))
 }
 
 #[cfg(test)]
@@ -77,7 +80,7 @@ mod tests {
         Tensor {
             name: name.to_string(),
             dimensions: dimensions.to_vec(),
-            scale_offset,
+            quantisation: scale_offset.map(|(scale, offset)| Quantisation { scale, offset }),
             unsigned_8bit: true,
             bytes: dimensions.iter().map(|&size| size as usize).product(),
         }
@@ -103,12 +106,12 @@ mod tests {
                 boxes: 1,
                 box_quantisation: Quantisation {
                     scale: 2.5,
-                    zero_point: 3
+                    offset: -3
                 },
                 scores: 2,
                 score_quantisation: Quantisation {
                     scale: 0.004,
-                    zero_point: 0
+                    offset: 0
                 },
                 classes: 0,
             })
@@ -136,19 +139,45 @@ mod tests {
         };
         assert_eq!(
             layout(&[signed], &yolox_outputs()),
-            Err("the model takes 1 inputs, not one 640x640 uint8 RGB image".to_string())
+            Err("input image is not uint8".to_string())
         );
         let offset = Tensor {
-            scale_offset: Some((1.0 / 255.0, -128)),
+            quantisation: Some(Quantisation {
+                scale: 1.0 / 255.0,
+                offset: -128,
+            }),
             ..image()
         };
         let refused = layout(&[offset], &yolox_outputs()).unwrap_err();
         assert!(refused.contains("an offset of -128"), "{refused}");
         let unquantised = Tensor {
-            scale_offset: None,
+            quantisation: None,
             ..image()
         };
         assert!(layout(&[unquantised], &yolox_outputs()).is_ok());
+    }
+
+    #[test]
+    fn a_channel_first_image_or_anchor_last_boxes_are_refused() {
+        let planar = tensor("image", &[1, 3, 640, 640], Some((1.0 / 255.0, 0)));
+        assert_eq!(
+            layout(&[planar], &yolox_outputs()),
+            Err("input image is [1, 3, 640, 640], not [1, 640, 640, 3]".to_string())
+        );
+        let mut outputs = yolox_outputs();
+        outputs[1] = tensor("boxes", &[1, 4, 8400], Some((2.5, -3)));
+        assert_eq!(
+            layout(&[image()], &outputs),
+            Err("output boxes is [1, 4, 8400], not [1, 8400, 4]".to_string())
+        );
+    }
+
+    #[test]
+    fn two_inputs_are_refused() {
+        assert_eq!(
+            layout(&[image(), image()], &yolox_outputs()),
+            Err("the model takes 2 inputs, not one 640x640 uint8 RGB image".to_string())
+        );
     }
 
     #[test]
@@ -161,10 +190,10 @@ mod tests {
         outputs[1] = tensor("boxes", &[1, 8400, 2], Some((2.5, -3)));
         assert_eq!(
             layout(&[image()], &outputs),
-            Err("output boxes holds 16800 bytes, not 33600".to_string())
+            Err("output boxes is [1, 8400, 2], not [1, 8400, 4]".to_string())
         );
         let mut outputs = yolox_outputs();
-        outputs[2].scale_offset = None;
+        outputs[2].quantisation = None;
         assert_eq!(
             layout(&[image()], &outputs),
             Err("output scores is not quantised".to_string())

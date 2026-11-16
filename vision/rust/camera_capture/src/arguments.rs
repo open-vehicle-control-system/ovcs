@@ -2,6 +2,8 @@
 
 use framing::output_flag::{self, MAX_OUTPUTS};
 
+use crate::schedule::MIN_MAX_HZ;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SyncMode {
     Off,
@@ -48,8 +50,9 @@ pub struct Arguments {
     pub format: Format,
     /// Each output made beside the frames, in the order of their indices.
     pub outputs: Vec<OutputSpec>,
-    /// The most frames a second the outputs are made on, 0 for every frame.
-    pub outputs_max_hz: f64,
+    /// The most frames a second the outputs are made on; `None` makes them on
+    /// every frame.
+    pub outputs_max_hz: Option<f64>,
 }
 
 /// One of the outputs made beside the frames from the ISP's second stream.
@@ -81,7 +84,7 @@ pub fn parse(command_line: &[String]) -> Result<Arguments, String> {
         sensor_mode: None,
         format: Format::Jpeg,
         outputs: Vec::new(),
-        outputs_max_hz: 0.0,
+        outputs_max_hz: None,
     };
     let mut outputs = Vec::new();
     let mut outputs_max_hz = None;
@@ -94,7 +97,12 @@ pub fn parse(command_line: &[String]) -> Result<Arguments, String> {
             "--camera" => arguments.camera_id = unsigned(flag, value)?,
             "--width" => arguments.width = unsigned(flag, value)?,
             "--height" => arguments.height = unsigned(flag, value)?,
-            "--fps" => arguments.fps = unsigned(flag, value)?,
+            "--fps" => {
+                arguments.fps = match unsigned(flag, value)? {
+                    0 => return Err(format!("{flag} must be above 0")),
+                    fps => fps,
+                }
+            }
             "--rotation" => arguments.rotation = unsigned(flag, value)?,
             "--sync" => {
                 arguments.sync_mode = match value.as_str() {
@@ -141,7 +149,7 @@ pub fn parse(command_line: &[String]) -> Result<Arguments, String> {
         if outputs.is_empty() {
             return Err("--outputs-max-hz needs an --output".to_string());
         }
-        arguments.outputs_max_hz = max_hz;
+        arguments.outputs_max_hz = (max_hz > 0.0).then_some(max_hz);
     }
     Ok(arguments)
 }
@@ -245,9 +253,9 @@ fn jpeg_output(
 
 fn max_hz(flag: &str, value: &str) -> Result<f64, String> {
     match value.parse::<f64>() {
-        Ok(max_hz) if (0.0..=1000.0).contains(&max_hz) => Ok(max_hz),
+        Ok(max_hz) if max_hz == 0.0 || (MIN_MAX_HZ..=1000.0).contains(&max_hz) => Ok(max_hz),
         _ => Err(format!(
-            "{flag} must be a number from 0 to 1000, got {value}"
+            "{flag} must be 0 or a number from {MIN_MAX_HZ:.1e} to 1000, got {value}"
         )),
     }
 }
@@ -297,7 +305,7 @@ mod tests {
                 sensor_mode: None,
                 format: Format::Jpeg,
                 outputs: Vec::new(),
-                outputs_max_hz: 0.0,
+                outputs_max_hz: None,
             })
         );
     }
@@ -361,7 +369,7 @@ mod tests {
                         quality: 80
                     }
                 ],
-                outputs_max_hz: 10.0,
+                outputs_max_hz: Some(10.0),
             })
         );
     }
@@ -489,17 +497,24 @@ mod tests {
         }
     }
 
+    // An ISP output and a JPEG of it.
+    const OUTPUT_FLAGS: [&str; 4] = [
+        "--output",
+        "isp:1152x648:unsent",
+        "--output",
+        "from:0:1152x648:jpeg:80",
+    ];
+
     #[test]
     fn outputs_are_made_on_every_frame_unless_capped() {
-        let flags = [
-            "--output",
-            "isp:1152x648:unsent",
-            "--output",
-            "from:0:1152x648:jpeg:80",
-        ];
-        assert_eq!(parse(&strings(&flags)).unwrap().outputs_max_hz, 0.0);
-        for (max_hz, expected) in [("10", 10.0), ("7.5", 7.5), ("10.0", 10.0), ("0", 0.0)] {
-            let capped = [&flags[..], &["--outputs-max-hz", max_hz]].concat();
+        assert_eq!(parse(&strings(&OUTPUT_FLAGS)).unwrap().outputs_max_hz, None);
+        for (max_hz, expected) in [
+            ("10", Some(10.0)),
+            ("7.5", Some(7.5)),
+            ("10.0", Some(10.0)),
+            ("0", None),
+        ] {
+            let capped = [&OUTPUT_FLAGS[..], &["--outputs-max-hz", max_hz]].concat();
             assert_eq!(parse(&strings(&capped)).unwrap().outputs_max_hz, expected);
         }
     }
@@ -507,18 +522,12 @@ mod tests {
     #[test]
     fn an_outputs_cap_is_refused_out_of_range_or_without_outputs() {
         for max_hz in ["-1", "1000.5", "fast", "NaN", "inf"] {
-            let flags = [
-                "--output",
-                "isp:1152x648:unsent",
-                "--output",
-                "from:0:1152x648:jpeg:80",
-                "--outputs-max-hz",
-                max_hz,
-            ];
+            let flags = [&OUTPUT_FLAGS[..], &["--outputs-max-hz", max_hz]].concat();
             assert_eq!(
                 parse(&strings(&flags)),
                 Err(format!(
-                    "--outputs-max-hz must be a number from 0 to 1000, got {max_hz}"
+                    "--outputs-max-hz must be 0 or a number from {MIN_MAX_HZ:.1e} to 1000, \
+                     got {max_hz}"
                 ))
             );
         }
@@ -526,6 +535,18 @@ mod tests {
             parse(&strings(&["--outputs-max-hz", "10"])),
             Err("--outputs-max-hz needs an --output".to_string())
         );
+    }
+
+    #[test]
+    fn an_outputs_cap_whose_interval_overflows_a_capture_time_is_refused() {
+        let flags = |max_hz| strings(&[&OUTPUT_FLAGS[..], &["--outputs-max-hz", max_hz]].concat());
+        assert_eq!(
+            parse(&flags("1e-11")),
+            Err(format!(
+                "--outputs-max-hz must be 0 or a number from {MIN_MAX_HZ:.1e} to 1000, got 1e-11"
+            ))
+        );
+        assert_eq!(parse(&flags("1e-9")).unwrap().outputs_max_hz, Some(1e-9));
     }
 
     #[test]
@@ -600,6 +621,14 @@ mod tests {
         assert_eq!(
             parse(&strings(&["--zoom", "2"])),
             Err("unknown argument --zoom".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_a_frame_rate_of_0() {
+        assert_eq!(
+            parse(&strings(&["--fps", "0"])),
+            Err("--fps must be above 0".to_string())
         );
     }
 

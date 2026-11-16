@@ -4,6 +4,8 @@
 //! (`direct::takes_direct`) moves them by DMA straight between those buffers and the device,
 //! on async streams; any other goes through one input and one output vstream, which convert.
 
+#![deny(unsafe_op_in_unsafe_fn)]
+
 use std::ffi::CString;
 use std::mem::MaybeUninit;
 use std::ptr;
@@ -18,6 +20,7 @@ use crate::outcome::FrameOutcome;
     non_snake_case,
     non_upper_case_globals,
     dead_code,
+    unsafe_op_in_unsafe_fn,
     clippy::all
 )]
 mod ffi {
@@ -66,30 +69,29 @@ impl Device {
         let mut device = Device {
             vdevice: ptr::null_mut(),
         };
-        // SAFETY: the params are initialised by HailoRT before use; the handle is released in Drop.
-        unsafe {
-            let mut params = MaybeUninit::<hailo_vdevice_params_t>::zeroed();
-            check(
-                hailo_init_vdevice_params(params.as_mut_ptr()),
-                "hailo_init_vdevice_params",
-            )?;
-            (*params.as_mut_ptr()).scheduling_algorithm = HAILO_SCHEDULING_ALGORITHM_ROUND_ROBIN;
-            check(
-                hailo_create_vdevice(params.as_mut_ptr(), &mut device.vdevice),
-                "hailo_create_vdevice",
-            )?;
-        }
+        let mut params = MaybeUninit::<hailo_vdevice_params_t>::zeroed();
+        // SAFETY: `params` is a live hailo_vdevice_params_t for HailoRT to fill in.
+        check(
+            unsafe { hailo_init_vdevice_params(params.as_mut_ptr()) },
+            "hailo_init_vdevice_params",
+        )?;
+        // SAFETY: hailo_init_vdevice_params initialised it.
+        let mut params = unsafe { params.assume_init() };
+        params.scheduling_algorithm = HAILO_SCHEDULING_ALGORITHM_ROUND_ROBIN;
+        // SAFETY: both pointers are live; Drop releases the vdevice created.
+        check(
+            unsafe { hailo_create_vdevice(&mut params, &mut device.vdevice) },
+            "hailo_create_vdevice",
+        )?;
         Ok(Arc::new(device))
     }
 }
 
 impl Drop for Device {
     fn drop(&mut self) {
-        // SAFETY: released once, after every network holding it has been dropped.
-        unsafe {
-            if !self.vdevice.is_null() {
-                hailo_release_vdevice(self.vdevice);
-            }
+        if !self.vdevice.is_null() {
+            // SAFETY: released once, after every network holding it has been dropped.
+            unsafe { hailo_release_vdevice(self.vdevice) };
         }
     }
 }
@@ -163,6 +165,8 @@ pub struct Network {
     io: Io,
     pub input: Shape,
     output_info: hailo_vstream_info_t,
+    /// The order of the output frames read into the output buffer.
+    output_order: hailo_format_order_t,
     /// Size of one output frame, in bytes.
     pub output_bytes: usize,
     input_buffer: PageBuffer,
@@ -186,7 +190,44 @@ impl Network {
         let path = CString::new(hef_path).map_err(|_| format!("bad HEF path {hef_path}"))?;
         // SAFETY: a plain libc call.
         let page_bytes = usize::try_from(unsafe { sysconf(SC_PAGESIZE) }).unwrap_or(4096);
-        let mut network = Network {
+        let mut network = Network::unopened(device, page_bytes);
+
+        // SAFETY: `path` is NUL-terminated and the out-pointer live; Drop releases the HEF.
+        check(
+            unsafe { hailo_create_hef_file(&mut network.hef, path.as_ptr()) },
+            &format!("hailo_create_hef_file({hef_path})"),
+        )?;
+        // SAFETY: the HEF was just created.
+        let streams = unsafe { hef_streams(network.hef, hef_path) }?;
+        let direct = output_format == HAILO_FORMAT_TYPE_UINT8
+            && direct::takes_direct(&streams.iter().map(stream_of).collect::<Vec<_>>());
+
+        // SAFETY: the HEF was just created.
+        let network_group = unsafe { configure(device, network.hef, hef_path, direct) }?;
+
+        if direct {
+            // SAFETY: the group is configured from the HEF `streams` describe, its streams
+            // flagged async.
+            unsafe { network.open_direct(network_group, &streams, page_bytes, hef_path) }?;
+        } else {
+            // SAFETY: the group is the network's configured group.
+            unsafe { network.open_vstreams(network_group, output_format, page_bytes, hef_path) }?;
+        }
+
+        let expected = network.input.width * network.input.height * network.input.features;
+        let frame = network.input_buffer.as_slice().len();
+        if frame != expected {
+            return Err(format!(
+                "{hef_path}: expected a {expected}-byte UINT8 input frame, HailoRT wants {frame}"
+            ));
+        }
+        Ok(network)
+    }
+
+    /// A network with no HEF, streams or buffers yet, which `open` fills in and Drop
+    /// releases whatever it holds of.
+    fn unopened(device: &Arc<Device>, page_bytes: usize) -> Network {
+        Network {
             hef: ptr::null_mut(),
             io: Io::Vstreams {
                 inputs: Vec::new(),
@@ -199,79 +240,12 @@ impl Network {
             },
             // SAFETY: a plain C struct, filled in below before it is read.
             output_info: unsafe { MaybeUninit::zeroed().assume_init() },
+            output_order: HAILO_FORMAT_ORDER_AUTO,
             output_bytes: 0,
             input_buffer: PageBuffer::new(0, page_bytes),
             output_buffer: PageBuffer::new(0, page_bytes),
             device: Arc::clone(device),
-        };
-
-        // SAFETY: every out-pointer is a live local or a field of `network`, every struct
-        // is sized by bindgen from the sysroot header, and handles are released in Drop.
-        unsafe {
-            check(
-                hailo_create_hef_file(&mut network.hef, path.as_ptr()),
-                &format!("hailo_create_hef_file({hef_path})"),
-            )?;
-            let streams = hef_streams(network.hef, hef_path)?;
-            let direct = output_format == HAILO_FORMAT_TYPE_UINT8
-                && direct::takes_direct(&streams.iter().map(stream_of).collect::<Vec<_>>());
-
-            let mut configure_params = Box::new(MaybeUninit::<hailo_configure_params_t>::zeroed());
-            check(
-                hailo_init_configure_params_by_vdevice(
-                    network.hef,
-                    device.vdevice,
-                    configure_params.as_mut_ptr(),
-                ),
-                "hailo_init_configure_params_by_vdevice",
-            )?;
-            if direct {
-                let params = &mut *configure_params.as_mut_ptr();
-                let groups = params.network_group_params_count;
-                for group in &mut params.network_group_params[..groups] {
-                    let count = group.stream_params_by_name_count;
-                    for stream in &mut group.stream_params_by_name[..count] {
-                        stream.stream_params.flags |= HAILO_STREAM_FLAGS_ASYNC;
-                    }
-                }
-            }
-
-            let mut network_groups: [hailo_configured_network_group;
-                HAILO_MAX_NETWORK_GROUPS as usize] =
-                [ptr::null_mut(); HAILO_MAX_NETWORK_GROUPS as usize];
-            let mut network_group_count = network_groups.len();
-            check(
-                hailo_configure_vdevice(
-                    device.vdevice,
-                    network.hef,
-                    configure_params.as_mut_ptr(),
-                    network_groups.as_mut_ptr(),
-                    &mut network_group_count,
-                ),
-                &format!("hailo_configure_vdevice({hef_path})"),
-            )?;
-            if network_group_count == 0 {
-                return Err(format!(
-                    "{hef_path}: hailo_configure_vdevice returned no network group"
-                ));
-            }
-            let network_group = network_groups[0];
-
-            if direct {
-                network.open_direct(network_group, &streams, page_bytes, hef_path)?;
-            } else {
-                network.open_vstreams(network_group, output_format, page_bytes, hef_path)?;
-            }
         }
-
-        let expected = network.input.width * network.input.height * network.input.features;
-        let frame = network.input_buffer.as_slice().len();
-        if frame != expected {
-            return Err(format!(
-                "{hef_path}: expected a {expected}-byte UINT8 input frame, HailoRT wants {frame}"
-            ));
-        }
-        Ok(network)
     }
 
     /// The network's streams, made async at configuration, and its buffers, which HailoRT
@@ -298,21 +272,40 @@ impl Network {
             return Err(format!("{hef_path}: no input or no output stream"));
         };
         let mut input = ptr::null_mut();
+        // SAFETY: the group is live, the name NUL-terminated and the out-pointer live; the
+        // group owns the stream.
         check(
-            hailo_get_input_stream(network_group, input_info.name.as_ptr(), &mut input),
+            unsafe { hailo_get_input_stream(network_group, input_info.name.as_ptr(), &mut input) },
             "hailo_get_input_stream",
         )?;
         let mut output = ptr::null_mut();
+        // SAFETY: as for the input.
         check(
-            hailo_get_output_stream(network_group, output_info.name.as_ptr(), &mut output),
+            unsafe {
+                hailo_get_output_stream(network_group, output_info.name.as_ptr(), &mut output)
+            },
             "hailo_get_output_stream",
         )?;
 
-        self.input = Shape::of(input_info.__bindgen_anon_1.__bindgen_anon_1.shape);
-        self.output_info.__bindgen_anon_1.shape =
-            output_info.__bindgen_anon_1.__bindgen_anon_1.shape;
-        self.output_bytes = hailo_get_output_stream_frame_size(output);
-        self.input_buffer = PageBuffer::new(hailo_get_input_stream_frame_size(input), page_bytes);
+        // SAFETY: the shape views of the unions; a direct network's streams are no NMS.
+        let (input_shape, output_shape) = unsafe {
+            (
+                input_info.__bindgen_anon_1.__bindgen_anon_1.shape,
+                output_info.__bindgen_anon_1.__bindgen_anon_1.shape,
+            )
+        };
+        self.input = Shape::of(input_shape);
+        self.output_info.__bindgen_anon_1.shape = output_shape;
+        self.output_order = output_info.format.order;
+        // SAFETY: both streams are live.
+        let (input_bytes, output_bytes) = unsafe {
+            (
+                hailo_get_input_stream_frame_size(input),
+                hailo_get_output_stream_frame_size(output),
+            )
+        };
+        self.output_bytes = output_bytes;
+        self.input_buffer = PageBuffer::new(input_bytes, page_bytes);
         self.output_buffer = PageBuffer::new(self.output_bytes, page_bytes);
         self.io = Io::Direct {
             input,
@@ -320,25 +313,32 @@ impl Network {
             transfers: Box::default(),
             mapped: (false, false),
         };
+        // SAFETY: the buffer is page-aligned, of the length passed, and lives with the network,
+        // whose Drop unmaps it.
         check(
-            hailo_vdevice_dma_map_buffer(
-                self.device.vdevice,
-                self.input_buffer.as_mut_ptr().cast(),
-                self.input_buffer.as_slice().len(),
-                HAILO_DMA_BUFFER_DIRECTION_H2D,
-            ),
+            unsafe {
+                hailo_vdevice_dma_map_buffer(
+                    self.device.vdevice,
+                    self.input_buffer.as_mut_ptr().cast(),
+                    self.input_buffer.as_slice().len(),
+                    HAILO_DMA_BUFFER_DIRECTION_H2D,
+                )
+            },
             "hailo_vdevice_dma_map_buffer (input)",
         )?;
         if let Io::Direct { mapped, .. } = &mut self.io {
             mapped.0 = true;
         }
+        // SAFETY: as for the input buffer.
         check(
-            hailo_vdevice_dma_map_buffer(
-                self.device.vdevice,
-                self.output_buffer.as_mut_ptr().cast(),
-                self.output_buffer.as_slice().len(),
-                HAILO_DMA_BUFFER_DIRECTION_D2H,
-            ),
+            unsafe {
+                hailo_vdevice_dma_map_buffer(
+                    self.device.vdevice,
+                    self.output_buffer.as_mut_ptr().cast(),
+                    self.output_buffer.as_slice().len(),
+                    HAILO_DMA_BUFFER_DIRECTION_D2H,
+                )
+            },
             "hailo_vdevice_dma_map_buffer (output)",
         )?;
         if let Io::Direct { mapped, .. } = &mut self.io {
@@ -358,30 +358,45 @@ impl Network {
         page_bytes: usize,
         hef_path: &str,
     ) -> Result<(), String> {
-        let mut input_params: Vec<hailo_input_vstream_params_by_name_t> =
-            vec![MaybeUninit::zeroed().assume_init(); HAILO_MAX_STREAMS_COUNT as usize];
+        // SAFETY: plain C structs of integers, arrays and enum constants, for which zero is a
+        // value.
+        let (input_param, output_param): (
+            hailo_input_vstream_params_by_name_t,
+            hailo_output_vstream_params_by_name_t,
+        ) = unsafe {
+            (
+                MaybeUninit::zeroed().assume_init(),
+                MaybeUninit::zeroed().assume_init(),
+            )
+        };
+        let mut input_params = vec![input_param; HAILO_MAX_STREAMS_COUNT as usize];
+        let mut output_params = vec![output_param; HAILO_MAX_STREAMS_COUNT as usize];
         let mut input_count = input_params.len();
+        // SAFETY: the group is live and the params hold `input_count` entries.
         check(
-            hailo_make_input_vstream_params(
-                network_group,
-                true,
-                HAILO_FORMAT_TYPE_UINT8,
-                input_params.as_mut_ptr(),
-                &mut input_count,
-            ),
+            unsafe {
+                hailo_make_input_vstream_params(
+                    network_group,
+                    true,
+                    HAILO_FORMAT_TYPE_UINT8,
+                    input_params.as_mut_ptr(),
+                    &mut input_count,
+                )
+            },
             "hailo_make_input_vstream_params",
         )?;
-        let mut output_params: Vec<hailo_output_vstream_params_by_name_t> =
-            vec![MaybeUninit::zeroed().assume_init(); HAILO_MAX_STREAMS_COUNT as usize];
         let mut output_count = output_params.len();
+        // SAFETY: the group is live and the params hold `output_count` entries.
         check(
-            hailo_make_output_vstream_params(
-                network_group,
-                false,
-                output_format,
-                output_params.as_mut_ptr(),
-                &mut output_count,
-            ),
+            unsafe {
+                hailo_make_output_vstream_params(
+                    network_group,
+                    false,
+                    output_format,
+                    output_params.as_mut_ptr(),
+                    &mut output_count,
+                )
+            },
             "hailo_make_output_vstream_params",
         )?;
         if input_count != 1 {
@@ -396,6 +411,11 @@ impl Network {
         }
         input_params.truncate(input_count);
         output_params.truncate(output_count);
+        if output_format == HAILO_FORMAT_TYPE_FLOAT32 {
+            // The layout `detection::nms::decode_nms_by_class` reads.
+            output_params[0].params.user_buffer_format.order =
+                HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS;
+        }
         for input_param in &mut input_params {
             input_param.params.timeout_ms = HAILO_DEFAULT_VSTREAM_TIMEOUT_MS;
             input_param.params.queue_size = HAILO_DEFAULT_VSTREAM_QUEUE_SIZE;
@@ -406,13 +426,17 @@ impl Network {
         }
 
         let mut inputs = vec![ptr::null_mut(); input_count];
+        // SAFETY: the group is live and both arrays hold `input_count` entries; Drop releases
+        // the vstreams.
         check(
-            hailo_create_input_vstreams(
-                network_group,
-                input_params.as_ptr(),
-                input_count,
-                inputs.as_mut_ptr(),
-            ),
+            unsafe {
+                hailo_create_input_vstreams(
+                    network_group,
+                    input_params.as_ptr(),
+                    input_count,
+                    inputs.as_mut_ptr(),
+                )
+            },
             "hailo_create_input_vstreams",
         )?;
         self.io = Io::Vstreams {
@@ -420,13 +444,16 @@ impl Network {
             outputs: Vec::new(),
         };
         let mut outputs = vec![ptr::null_mut(); output_count];
+        // SAFETY: as for the inputs, with `output_count` entries.
         check(
-            hailo_create_output_vstreams(
-                network_group,
-                output_params.as_ptr(),
-                output_count,
-                outputs.as_mut_ptr(),
-            ),
+            unsafe {
+                hailo_create_output_vstreams(
+                    network_group,
+                    output_params.as_ptr(),
+                    output_count,
+                    outputs.as_mut_ptr(),
+                )
+            },
             "hailo_create_output_vstreams",
         )?;
         let (input, output) = (self.vstreams().0[0], outputs[0]);
@@ -435,25 +462,41 @@ impl Network {
         }
 
         let mut input_info = MaybeUninit::<hailo_vstream_info_t>::zeroed();
+        // SAFETY: the vstream is live and the info a live hailo_vstream_info_t to fill in.
         check(
-            hailo_get_input_vstream_info(input, input_info.as_mut_ptr()),
+            unsafe { hailo_get_input_vstream_info(input, input_info.as_mut_ptr()) },
             "hailo_get_input_vstream_info",
         )?;
-        self.input = Shape::of(input_info.assume_init().__bindgen_anon_1.shape);
+        // SAFETY: hailo_get_input_vstream_info filled it in; an input's union holds its shape.
+        self.input = Shape::of(unsafe { input_info.assume_init().__bindgen_anon_1.shape });
         let mut input_frame_size = 0;
+        // SAFETY: the vstream and the out-pointer are live.
         check(
-            hailo_get_input_vstream_frame_size(input, &mut input_frame_size),
+            unsafe { hailo_get_input_vstream_frame_size(input, &mut input_frame_size) },
             "hailo_get_input_vstream_frame_size",
         )?;
 
         let mut output_info = MaybeUninit::<hailo_vstream_info_t>::zeroed();
+        // SAFETY: as for the input.
         check(
-            hailo_get_output_vstream_info(output, output_info.as_mut_ptr()),
+            unsafe { hailo_get_output_vstream_info(output, output_info.as_mut_ptr()) },
             "hailo_get_output_vstream_info",
         )?;
-        self.output_info = output_info.assume_init();
+        // SAFETY: hailo_get_output_vstream_info filled it in.
+        self.output_info = unsafe { output_info.assume_init() };
+        let mut output_user_format = MaybeUninit::<hailo_format_t>::zeroed();
+        // SAFETY: the vstream is live and the format a live hailo_format_t to fill in.
         check(
-            hailo_get_output_vstream_frame_size(output, &mut self.output_bytes),
+            unsafe {
+                hailo_get_output_vstream_user_format(output, output_user_format.as_mut_ptr())
+            },
+            "hailo_get_output_vstream_user_format",
+        )?;
+        // SAFETY: hailo_get_output_vstream_user_format filled it in.
+        self.output_order = unsafe { output_user_format.assume_init() }.order;
+        // SAFETY: the vstream and the out-pointer are live.
+        check(
+            unsafe { hailo_get_output_vstream_frame_size(output, &mut self.output_bytes) },
             "hailo_get_output_vstream_frame_size",
         )?;
         self.input_buffer = PageBuffer::new(input_frame_size, page_bytes);
@@ -483,15 +526,29 @@ impl Network {
         self.output_buffer.as_slice()
     }
 
-    /// The classes an NMS output scores.
-    pub fn nms_classes(&self) -> usize {
-        // SAFETY: the union's NMS view, read for a network opened with an NMS output.
-        unsafe {
+    /// The classes an NMS output scores; `Err` unless the output is an NMS layer whose frames
+    /// are read NMS by class.
+    pub fn nms_classes(&self) -> Result<usize, String> {
+        let nms = matches!(
+            self.output_info.format.order,
+            HAILO_FORMAT_ORDER_HAILO_NMS
+                | HAILO_FORMAT_ORDER_HAILO_NMS_ON_CHIP
+                | HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS
+        );
+        if !nms || self.output_order != HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS {
+            return Err(format!(
+                "expected an NMS output read by class, its order is {}, read as {}",
+                self.output_info.format.order, self.output_order
+            ));
+        }
+        // SAFETY: an NMS output's info holds the union's NMS view.
+        let classes = unsafe {
             self.output_info
                 .__bindgen_anon_1
                 .nms_shape
-                .number_of_classes as usize
-        }
+                .number_of_classes
+        };
+        Ok(classes as usize)
     }
 
     /// The output's shape, for a network whose output is not an NMS layer.
@@ -523,12 +580,10 @@ impl Network {
         let (input, output) = (inputs[0], outputs[0]);
         let frame = self.input_buffer.as_slice();
         // SAFETY: both buffers outlive the calls and are at least as long as the sizes passed.
-        let written = unsafe {
-            check(
-                hailo_vstream_write_raw_buffer(input, frame.as_ptr().cast(), frame.len()),
-                "hailo_vstream_write_raw_buffer",
-            )
-        };
+        let written = check(
+            unsafe { hailo_vstream_write_raw_buffer(input, frame.as_ptr().cast(), frame.len()) },
+            "hailo_vstream_write_raw_buffer",
+        );
         if let Err(message) = written {
             return Err(match self.clear() {
                 Ok(()) => InferFailure {
@@ -547,16 +602,16 @@ impl Network {
         }
         let output_bytes = self.output_bytes;
         // SAFETY: as above.
-        unsafe {
-            check(
+        check(
+            unsafe {
                 hailo_vstream_read_raw_buffer(
                     output,
                     self.output_buffer.as_mut_ptr().cast(),
                     output_bytes,
-                ),
-                "hailo_vstream_read_raw_buffer",
-            )
-        }
+                )
+            },
+            "hailo_vstream_read_raw_buffer",
+        )
         .map_err(|message| InferFailure {
             message,
             outcome: FrameOutcome::ReadFailed,
@@ -586,35 +641,32 @@ impl Network {
         // SAFETY: both buffers are mapped, outlive the transfers (the program exits on a
         // transfer that does not complete) and are the streams' frame sizes; `opaque` is the
         // boxed `Transfers`, which outlives them too.
-        unsafe {
-            check(
-                hailo_stream_write_raw_buffer_async(
-                    input,
-                    self.input_buffer.as_mut_ptr().cast(),
-                    self.input_buffer.as_slice().len(),
-                    Some(on_written),
-                    opaque,
-                ),
-                "hailo_stream_write_raw_buffer_async",
+        let written = unsafe {
+            hailo_stream_write_raw_buffer_async(
+                input,
+                self.input_buffer.as_mut_ptr().cast(),
+                self.input_buffer.as_slice().len(),
+                Some(on_written),
+                opaque,
             )
-            .map_err(|message| InferFailure {
-                message,
-                outcome: FrameOutcome::WriteFailed {
-                    streams_cleared: true,
-                },
-            })?;
-            check(
-                hailo_stream_read_raw_buffer_async(
-                    output,
-                    self.output_buffer.as_mut_ptr().cast(),
-                    self.output_bytes,
-                    Some(on_read),
-                    opaque,
-                ),
-                "hailo_stream_read_raw_buffer_async",
+        };
+        check(written, "hailo_stream_write_raw_buffer_async").map_err(|message| InferFailure {
+            message,
+            outcome: FrameOutcome::WriteFailed {
+                streams_cleared: true,
+            },
+        })?;
+        // SAFETY: as for the write.
+        let read = unsafe {
+            hailo_stream_read_raw_buffer_async(
+                output,
+                self.output_buffer.as_mut_ptr().cast(),
+                self.output_bytes,
+                Some(on_read),
+                opaque,
             )
-            .map_err(in_flight)?;
-        }
+        };
+        check(read, "hailo_stream_read_raw_buffer_async").map_err(in_flight)?;
 
         let statuses = transfers.statuses.lock().unwrap_or_else(|e| e.into_inner());
         let (statuses, waited) = transfers
@@ -639,56 +691,62 @@ impl Network {
     fn clear(&self) -> Result<(), String> {
         let (inputs, outputs) = self.vstreams();
         // SAFETY: the handle arrays are the live vstreams created in `open`.
-        unsafe {
-            check(
-                hailo_clear_input_vstreams(inputs.as_ptr(), inputs.len()),
-                "hailo_clear_input_vstreams",
-            )?;
-            check(
-                hailo_clear_output_vstreams(outputs.as_ptr(), outputs.len()),
-                "hailo_clear_output_vstreams",
-            )
-        }
+        check(
+            unsafe { hailo_clear_input_vstreams(inputs.as_ptr(), inputs.len()) },
+            "hailo_clear_input_vstreams",
+        )?;
+        // SAFETY: as above.
+        check(
+            unsafe { hailo_clear_output_vstreams(outputs.as_ptr(), outputs.len()) },
+            "hailo_clear_output_vstreams",
+        )
     }
 }
 
 impl Drop for Network {
     fn drop(&mut self) {
-        // SAFETY: each handle is released once, streams and mappings before the HEF and the
-        // buffers; the device after.
-        unsafe {
-            match &self.io {
-                Io::Vstreams { inputs, outputs } => {
-                    if !inputs.is_empty() {
-                        hailo_release_input_vstreams(inputs.as_ptr(), inputs.len());
-                    }
-                    if !outputs.is_empty() {
-                        hailo_release_output_vstreams(outputs.as_ptr(), outputs.len());
-                    }
+        // Each handle is released once, the streams and the mappings before the HEF and the
+        // buffers, the device after: the fields drop once this returns.
+        match &self.io {
+            Io::Vstreams { inputs, outputs } => {
+                if !inputs.is_empty() {
+                    // SAFETY: the live vstreams created in `open_vstreams`.
+                    unsafe { hailo_release_input_vstreams(inputs.as_ptr(), inputs.len()) };
                 }
-                Io::Direct { mapped, .. } => {
-                    let mapped = *mapped;
-                    if mapped.0 {
+                if !outputs.is_empty() {
+                    // SAFETY: as for the inputs.
+                    unsafe { hailo_release_output_vstreams(outputs.as_ptr(), outputs.len()) };
+                }
+            }
+            Io::Direct { mapped, .. } => {
+                let mapped = *mapped;
+                if mapped.0 {
+                    // SAFETY: the buffer `open_direct` mapped, still allocated.
+                    unsafe {
                         hailo_vdevice_dma_unmap_buffer(
                             self.device.vdevice,
                             self.input_buffer.as_mut_ptr().cast(),
                             self.input_buffer.as_slice().len(),
                             HAILO_DMA_BUFFER_DIRECTION_H2D,
-                        );
-                    }
-                    if mapped.1 {
+                        )
+                    };
+                }
+                if mapped.1 {
+                    // SAFETY: as for the input buffer.
+                    unsafe {
                         hailo_vdevice_dma_unmap_buffer(
                             self.device.vdevice,
                             self.output_buffer.as_mut_ptr().cast(),
                             self.output_buffer.as_slice().len(),
                             HAILO_DMA_BUFFER_DIRECTION_D2H,
-                        );
-                    }
+                        )
+                    };
                 }
             }
-            if !self.hef.is_null() {
-                hailo_release_hef(self.hef);
-            }
+        }
+        if !self.hef.is_null() {
+            // SAFETY: the HEF `open` created, no longer used by any stream.
+            unsafe { hailo_release_hef(self.hef) };
         }
     }
 }
@@ -707,21 +765,88 @@ pub fn io(network: &Network) -> &'static str {
 /// # Safety
 /// `hef` is a live HEF handle.
 unsafe fn hef_streams(hef: hailo_hef, hef_path: &str) -> Result<Vec<hailo_stream_info_t>, String> {
+    // SAFETY: a plain C struct of integers, arrays and enum constants, for which zero is a
+    // value.
     let mut streams: Vec<hailo_stream_info_t> =
-        vec![MaybeUninit::zeroed().assume_init(); HAILO_MAX_STREAMS_COUNT as usize];
+        vec![unsafe { MaybeUninit::zeroed().assume_init() }; HAILO_MAX_STREAMS_COUNT as usize];
     let mut count = 0;
+    // SAFETY: the caller's HEF is live, a null name means its first network group, and the
+    // infos hold `streams.len()` entries.
     check(
-        hailo_hef_get_all_stream_infos(
-            hef,
-            ptr::null(),
-            streams.as_mut_ptr(),
-            streams.len(),
-            &mut count,
-        ),
+        unsafe {
+            hailo_hef_get_all_stream_infos(
+                hef,
+                ptr::null(),
+                streams.as_mut_ptr(),
+                streams.len(),
+                &mut count,
+            )
+        },
         &format!("hailo_hef_get_all_stream_infos({hef_path})"),
     )?;
     streams.truncate(count);
     Ok(streams)
+}
+
+/// The HEF configured on the device, its streams made async when `async_streams`; returns its
+/// first network group, which the vdevice owns.
+///
+/// # Safety
+/// `hef` is a live HEF handle.
+unsafe fn configure(
+    device: &Device,
+    hef: hailo_hef,
+    hef_path: &str,
+    async_streams: bool,
+) -> Result<hailo_configured_network_group, String> {
+    let mut configure_params = Box::new(MaybeUninit::<hailo_configure_params_t>::zeroed());
+    // SAFETY: the HEF and the vdevice are live, and the params are a live
+    // hailo_configure_params_t for HailoRT to fill in.
+    check(
+        unsafe {
+            hailo_init_configure_params_by_vdevice(
+                hef,
+                device.vdevice,
+                configure_params.as_mut_ptr(),
+            )
+        },
+        "hailo_init_configure_params_by_vdevice",
+    )?;
+    // SAFETY: hailo_init_configure_params_by_vdevice initialised them.
+    let configure_params = unsafe { configure_params.assume_init_mut() };
+    if async_streams {
+        let groups = configure_params.network_group_params_count;
+        for group in &mut configure_params.network_group_params[..groups] {
+            let count = group.stream_params_by_name_count;
+            for stream in &mut group.stream_params_by_name[..count] {
+                stream.stream_params.flags |= HAILO_STREAM_FLAGS_ASYNC;
+            }
+        }
+    }
+
+    let mut network_groups: [hailo_configured_network_group; HAILO_MAX_NETWORK_GROUPS as usize] =
+        [ptr::null_mut(); HAILO_MAX_NETWORK_GROUPS as usize];
+    let mut network_group_count = network_groups.len();
+    // SAFETY: the vdevice and the HEF are live, the params initialised, and the groups'
+    // array holds `network_group_count` handles; the vdevice owns the groups.
+    check(
+        unsafe {
+            hailo_configure_vdevice(
+                device.vdevice,
+                hef,
+                configure_params,
+                network_groups.as_mut_ptr(),
+                &mut network_group_count,
+            )
+        },
+        &format!("hailo_configure_vdevice({hef_path})"),
+    )?;
+    if network_group_count == 0 {
+        return Err(format!(
+            "{hef_path}: hailo_configure_vdevice returned no network group"
+        ));
+    }
+    Ok(network_groups[0])
 }
 
 /// What `direct::takes_direct` needs of a stream info.

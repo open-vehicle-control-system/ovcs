@@ -10,12 +10,12 @@ use crate::settings::{ColourSettings, Settings};
 /// What to capture: the stereo pair, or a single colour camera.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
-    Pair(Arguments),
+    Pair(PairArguments),
     Single(SingleArguments),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Arguments {
+pub struct PairArguments {
     /// Output size; the sensor runs at twice this in each axis.
     pub width: u32,
     pub height: u32,
@@ -126,6 +126,23 @@ impl Output {
 pub struct Nodes {
     pub video: String,
     pub sensor: String,
+    /// The sensor's model, from its name.
+    pub model: SensorModel,
+}
+
+/// A camera's nodes, its sensor named by `flag`, refused for a sensor of no
+/// known model.
+fn nodes(video: String, sensor: String, flag: &str) -> Result<Nodes, String> {
+    Ok(Nodes {
+        model: sensor_model(flag, &sensor)?,
+        video,
+        sensor,
+    })
+}
+
+fn sensor_model(flag: &str, sensor: &str) -> Result<SensorModel, String> {
+    SensorModel::for_sensor(sensor)
+        .ok_or_else(|| format!("{flag}: {sensor} is none of imx708, imx296 and imx477"))
 }
 
 const SINGLE_FLAGS: [&str; 4] = ["--video", "--sensor", "--sensor-width", "--sensor-height"];
@@ -140,11 +157,11 @@ const PAIR_FLAGS: [&str; 6] = [
 
 /// Parses the arguments after the program name: a single camera's when they
 /// name its nodes (`--video`, `--sensor`, see `parse_single`), the pair's
-/// otherwise (see `parse`). The error is the message to log.
+/// otherwise (see `parse_pair`). The error is the message to log.
 pub fn parse_command(arguments: &[String]) -> Result<Command, String> {
     let flags: Vec<&str> = arguments.iter().step_by(2).map(String::as_str).collect();
     if !flags.iter().any(|flag| SINGLE_FLAGS.contains(flag)) {
-        return parse(arguments).map(Command::Pair);
+        return parse_pair(arguments).map(Command::Pair);
     }
     match flags.iter().find(|flag| PAIR_FLAGS.contains(flag)) {
         Some(flag) => Err(format!(
@@ -171,7 +188,7 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
     let mut outputs = Vec::new();
     // The settings start from the sensor's, wherever `--sensor` comes.
     let named = (arguments.chunks_exact(2)).find(|pair| pair[0] == "--sensor");
-    let model = SensorModel::for_sensor(named.map_or("", |pair| pair[1].as_str()));
+    let model = sensor_model("--sensor", &named.ok_or("missing --sensor")?[1])?;
     let mut settings = ColourSettings::for_sensor(model);
     let mut rest = arguments.iter();
     while let Some(flag) = rest.next() {
@@ -181,7 +198,7 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
         match flag.as_str() {
             "--sensor-width" => sensor_width = Some(even(flag, value)?),
             "--sensor-height" => sensor_height = Some(even(flag, value)?),
-            "--fps" => fps = Some(number(flag, value)?),
+            "--fps" => fps = Some(frame_rate(flag, value)?),
             "--video" => video = Some(value.clone()),
             "--sensor" => sensor = Some(value.clone()),
             "--output" => outputs.push(value.as_str()),
@@ -225,6 +242,7 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
         camera: Nodes {
             video: video.ok_or("missing --video")?,
             sensor: sensor.ok_or("missing --sensor")?,
+            model,
         },
         outputs: specs,
         settings,
@@ -349,7 +367,7 @@ fn h264(bitrate: &str, interval: &str) -> Result<Format, String> {
 /// Parses the arguments after the program name: the size and rate, each
 /// side's nodes, then any setting as `--name value`, with dashes for
 /// underscores. The error is the message to log.
-pub fn parse(arguments: &[String]) -> Result<Arguments, String> {
+pub fn parse_pair(arguments: &[String]) -> Result<PairArguments, String> {
     let (mut width, mut height, mut fps) = (None, None, None);
     let (mut left_node, mut left_subdevice) = (None, None);
     let (mut right_node, mut right_subdevice) = (None, None);
@@ -362,7 +380,7 @@ pub fn parse(arguments: &[String]) -> Result<Arguments, String> {
         match flag.as_str() {
             "--width" => width = Some(number(flag, value)?),
             "--height" => height = Some(number(flag, value)?),
-            "--fps" => fps = Some(number(flag, value)?),
+            "--fps" => fps = Some(frame_rate(flag, value)?),
             "--left-video" => left_node = Some(value.clone()),
             "--left-sensor" => left_subdevice = Some(value.clone()),
             "--right-video" => right_node = Some(value.clone()),
@@ -373,18 +391,20 @@ pub fn parse(arguments: &[String]) -> Result<Arguments, String> {
             },
         }
     }
-    Ok(Arguments {
+    Ok(PairArguments {
         width: width.ok_or("missing --width")?,
         height: height.ok_or("missing --height")?,
         fps: fps.ok_or("missing --fps")?,
-        left: Nodes {
-            video: left_node.ok_or("missing --left-video")?,
-            sensor: left_subdevice.ok_or("missing --left-sensor")?,
-        },
-        right: Nodes {
-            video: right_node.ok_or("missing --right-video")?,
-            sensor: right_subdevice.ok_or("missing --right-sensor")?,
-        },
+        left: nodes(
+            left_node.ok_or("missing --left-video")?,
+            left_subdevice.ok_or("missing --left-sensor")?,
+            "--left-sensor",
+        )?,
+        right: nodes(
+            right_node.ok_or("missing --right-video")?,
+            right_subdevice.ok_or("missing --right-sensor")?,
+            "--right-sensor",
+        )?,
         settings,
     })
 }
@@ -398,6 +418,14 @@ fn even(flag: &str, value: &str) -> Result<u32, String> {
         Ok(samples)
     } else {
         Err(format!("{flag}: an even number of samples, got {value}"))
+    }
+}
+
+/// A frame rate the sensor's blanking can be computed for.
+fn frame_rate(flag: &str, value: &str) -> Result<u32, String> {
+    match number(flag, value)? {
+        0 => Err(format!("{flag}: at least 1 frame a second, got {value}")),
+        fps => Ok(fps),
     }
 }
 
@@ -436,7 +464,7 @@ mod tests {
 
     #[test]
     fn parses_the_size_the_nodes_and_the_settings() {
-        let arguments = parse(&command_line(&["--black-level", "60"])).unwrap();
+        let arguments = parse_pair(&command_line(&["--black-level", "60"])).unwrap();
         assert_eq!(
             (arguments.width, arguments.height, arguments.fps),
             (768, 432, 30)
@@ -445,7 +473,8 @@ mod tests {
             arguments.left,
             Nodes {
                 video: "vi-output-0".to_string(),
-                sensor: "imx708 5-001a".to_string()
+                sensor: "imx708 5-001a".to_string(),
+                model: SensorModel::Imx708,
             }
         );
         assert_eq!(arguments.right.sensor, "imx708 6-001a");
@@ -453,10 +482,39 @@ mod tests {
     }
 
     #[test]
+    fn a_frame_rate_of_0_is_refused() {
+        let refused = Err("--fps: at least 1 frame a second, got 0".to_string());
+        let mut pair = command_line(&[]);
+        pair[5] = "0".to_string();
+        assert_eq!(parse_pair(&pair).map(|_| ()), refused);
+        let mut single = single_command_line(&[]);
+        single[9] = "0".to_string();
+        assert_eq!(parse_single(&single).map(|_| ()), refused);
+    }
+
+    #[test]
+    fn a_sensor_of_no_known_model_is_refused() {
+        let refused = |flag: &str| {
+            Err(format!(
+                "{flag}: imx219 10-0010 is none of imx708, imx296 and imx477"
+            ))
+        };
+        let mut pair = command_line(&[]);
+        pair[13] = "imx219 10-0010".to_string();
+        assert_eq!(parse_pair(&pair).map(|_| ()), refused("--right-sensor"));
+        let mut single = single_command_line(&[]);
+        single[3] = "imx219 10-0010".to_string();
+        assert_eq!(parse_single(&single).map(|_| ()), refused("--sensor"));
+    }
+
+    #[test]
     fn every_node_is_required() {
         let mut arguments = command_line(&[]);
         arguments.drain(8..10);
-        assert_eq!(parse(&arguments), Err("missing --left-sensor".to_string()));
+        assert_eq!(
+            parse_pair(&arguments),
+            Err("missing --left-sensor".to_string())
+        );
     }
 
     fn single_command_line(extra: &[&str]) -> Vec<String> {
@@ -539,7 +597,7 @@ mod tests {
         let command_line = command_line(&["--black-level", "60"]);
         assert_eq!(
             parse_command(&command_line),
-            Ok(Command::Pair(parse(&command_line).unwrap()))
+            Ok(Command::Pair(parse_pair(&command_line).unwrap()))
         );
     }
 
@@ -561,7 +619,8 @@ mod tests {
             arguments.camera,
             Nodes {
                 video: "msm_vfe2_video0".to_string(),
-                sensor: "imx477 5-001a".to_string()
+                sensor: "imx477 5-001a".to_string(),
+                model: SensorModel::Imx477,
             }
         );
         assert!(!arguments.settings.awb);

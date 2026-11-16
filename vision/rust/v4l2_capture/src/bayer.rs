@@ -17,6 +17,7 @@ pub struct Tone {
 
 impl Tone {
     /// The tone of 10-bit samples.
+    #[cfg(test)]
     pub fn new(black_level: u16, gamma: f64) -> Tone {
         Tone::with_sample_bits(black_level, gamma, 10)
     }
@@ -121,19 +122,17 @@ fn samples(row: &[u8], layout: Layout, out: &mut [u16]) {
     }
 }
 
-/// Averages each 2x2 RGGB cell of 10-bit samples stored as `layout` into one
-/// grey pixel through `tone`, halving both dimensions; `rotate_180` turns the
-/// image for a sensor mounted upside down. Rows start every `row_stride`
-/// bytes, at least `layout.row_bytes(width)`, and `raw` holds `height` of them.
-pub fn grey_half(
-    raw: &[u8],
-    width: usize,
-    height: usize,
-    row_stride: usize,
-    layout: Layout,
-    tone: &Tone,
-    rotate_180: bool,
-) -> Vec<u8> {
+/// Averages each 2x2 RGGB cell of `frame` into one grey pixel through
+/// `tone`, halving both dimensions; `rotate_180` turns the image for a sensor
+/// mounted upside down.
+pub fn grey_half(frame: &RawFrame, tone: &Tone, rotate_180: bool) -> Vec<u8> {
+    let RawFrame {
+        raw,
+        width,
+        height,
+        row_stride,
+        layout,
+    } = *frame;
     let row_bytes = layout.row_bytes(width);
     let mut grey = Vec::with_capacity((width / 2) * (height / 2));
     let (mut top_samples, mut bottom_samples) = (vec![0u16; width], vec![0u16; width]);
@@ -160,7 +159,7 @@ pub fn grey_half(
 }
 
 /// The samples of a row of RGGB cells' two rows, kept from one frame to the next.
-pub(crate) type CellRows = [Vec<u16>; 2];
+pub(crate) type CellRowSamples = [Vec<u16>; 2];
 
 /// A raw RGGB frame: `height` rows starting every `row_stride` bytes, at
 /// least `layout.row_bytes(width)`; `width` and `height` are even.
@@ -181,11 +180,11 @@ impl RawFrame<'_> {
     /// Calls `cell_row` with the index of the top row of each row of RGGB
     /// cells in `cell_rows` whose index is a multiple of `step`, then its top
     /// row's samples and its bottom row's, unpacked into `rows`.
-    pub(crate) fn cell_rows(
+    pub(crate) fn for_each_cell_row(
         &self,
         cell_rows: Range<usize>,
         step: usize,
-        [top, bottom]: &mut CellRows,
+        [top, bottom]: &mut CellRowSamples,
         mut cell_row: impl FnMut(usize, &[u16], &[u16]),
     ) {
         let row_bytes = self.layout.row_bytes(self.width);
@@ -224,6 +223,9 @@ pub struct Buffers {
 /// At its own size, white balance by `gains`, then the tone, then
 /// interpolation: one lookup per sample instead of three per pixel,
 /// invisible between neighbours.
+///
+/// No channel's gain is below 1: a gain below 1 raises the other channels
+/// instead, so that clipped highlights stay white.
 pub fn develop(
     frame: &RawFrame,
     tone: &Tone,
@@ -233,18 +235,18 @@ pub fn develop(
     Buffers { bands }: &mut Buffers,
 ) -> Measures {
     let rotate_180 = conversion.rotate_180;
+    let least = gains.red.min(gains.blue).min(1.0);
+    let gains_q12 = [gains.red, 1.0, gains.blue].map(|gain| q12(gain / least));
     let sums = match conversion.output {
         Output::Full => {
-            let scaled_table = |gain: f64| -> Vec<u8> {
-                let gain_q12 = q12(gain);
+            let [red, green, blue] = gains_q12.map(|gain_q12| -> Vec<u8> {
                 (0..tone.table.len())
                     .map(|sample| tone.scaled(sample as u16, gain_q12))
                     .collect()
-            };
-            let (red, blue) = (scaled_table(gains.red), scaled_table(gains.blue));
+            });
             let tables = ChannelTables {
                 red: &red,
-                green: &tone.table,
+                green: &green,
                 blue: &blue,
             };
             images
@@ -258,14 +260,14 @@ pub fn develop(
                 conversion.threads,
                 bands,
                 |cells, image, demosaic| {
-                    let sums = measure(frame, tone, conversion, cells.clone(), &mut demosaic.cells);
+                    let rows = &mut demosaic.cells;
+                    let sums = measure(frame, tone, gains_q12[1], conversion, cells.clone(), rows);
                     full_band(frame, &tables, cells, image, demosaic);
                     sums
                 },
             )
         }
         Output::Half => {
-            let gains_q12 = (q12(gains.red), q12(gains.blue));
             images
                 .rgb
                 .resize(frame.width / 2 * frame.cell_row_count() * 3, 0);
@@ -278,7 +280,7 @@ pub fn develop(
                 bands,
                 |cells, image, demosaic| {
                     let rows = &mut demosaic.cells;
-                    let sums = measure(frame, tone, conversion, cells.clone(), rows);
+                    let sums = measure(frame, tone, gains_q12[1], conversion, cells.clone(), rows);
                     half_band(frame, tone, gains_q12, cells, image, rows);
                     sums
                 },
@@ -307,17 +309,17 @@ fn full_band(
 }
 
 /// Writes the rows of RGGB cells `cells` of `frame` into `image`, each cell
-/// one pixel, through `tone`, red and blue scaled by `gains_q12`, red's and
-/// blue's gains in 1/4096ths, first.
+/// one pixel, through `tone`, each channel scaled by `gains_q12`, red's,
+/// green's and blue's gains in 1/4096ths, first.
 fn half_band(
     frame: &RawFrame,
     tone: &Tone,
-    (red_q12, blue_q12): (u32, u32),
+    [red_q12, green_q12, blue_q12]: [u32; 3],
     cells: Range<usize>,
     mut image: Image,
-    rows: &mut CellRows,
+    rows: &mut CellRowSamples,
 ) {
-    frame.cell_rows(cells, 1, rows, |row, top, bottom| {
+    frame.for_each_cell_row(cells, 1, rows, |row, top, bottom| {
         image.write(row / 2, |out| {
             for ((top_pair, bottom_pair), pixel) in top
                 .chunks_exact(2)
@@ -326,7 +328,7 @@ fn half_band(
             {
                 let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
                 pixel[0] = tone.scaled(top_pair[0], red_q12);
-                pixel[1] = tone.grey(green as u16);
+                pixel[1] = tone.scaled(green as u16, green_q12);
                 pixel[2] = tone.scaled(bottom_pair[1], blue_q12);
             }
         });
@@ -402,6 +404,7 @@ impl<'a> Image<'a> {
         if y.is_multiple_of(2) || !made_along {
             return;
         }
+        // Turned rows are stored bottom-up, so this row is its pair's first in memory.
         let pair = if self.rotate_180 { target } else { target - 1 };
         let rows = &self.rgb[pair * row_bytes..(pair + 2) * row_bytes];
         let width = row_bytes / 3;
@@ -433,7 +436,7 @@ impl<'a> Image<'a> {
 
 /// The rows `demosaic_full` works on, kept from one frame to the next.
 pub(crate) struct DemosaicRows<V> {
-    cells: CellRows,
+    cells: CellRowSamples,
     samples: Vec<u16>,
     developed: [Vec<V>; 3],
     interpolated: Vec<V>,
@@ -442,7 +445,7 @@ pub(crate) struct DemosaicRows<V> {
 impl<V> Default for DemosaicRows<V> {
     fn default() -> DemosaicRows<V> {
         DemosaicRows {
-            cells: CellRows::default(),
+            cells: CellRowSamples::default(),
             samples: Vec::new(),
             developed: std::array::from_fn(|_| Vec::new()),
             interpolated: Vec::new(),
@@ -605,22 +608,23 @@ fn q12(gain: f64) -> u32 {
 
 /// What `conversion` asks to measure of every `conversion.row_step`-th row
 /// of RGGB cells of `frame` within `cells`: for auto exposure, each cell's
-/// two greens averaged through `tone`, as the half-size image has them; for
-/// white balance, each cell's red, greens and blue above `tone`'s black
-/// level.
+/// two greens averaged, scaled by `green_q12`, green's gain in 1/4096ths,
+/// and through `tone`, as the half-size image has them; for white balance,
+/// each cell's red, greens and blue above `tone`'s black level.
 fn measure(
     frame: &RawFrame,
     tone: &Tone,
+    green_q12: u32,
     conversion: &Conversion,
     cells: Range<usize>,
-    rows: &mut CellRows,
+    rows: &mut CellRowSamples,
 ) -> Sums {
     let signal = |sample: u16| u64::from(sample.saturating_sub(tone.black_level));
     Sums::measured(frame, conversion, cells, rows, |_, top, bottom, sums| {
         for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
             if conversion.green_mean {
                 let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
-                sums.green += u64::from(tone.grey(green as u16));
+                sums.green += u64::from(tone.scaled(green as u16, green_q12));
             }
             if conversion.channel_means {
                 sums.channels[0] += signal(top_pair[0]);
@@ -634,6 +638,7 @@ fn measure(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::fixtures::{frame, packed12_frame, rgb_only};
 
     fn little_endian_samples(samples: &[u16]) -> Vec<u8> {
         samples.iter().flat_map(|s| s.to_le_bytes()).collect()
@@ -663,7 +668,11 @@ pub(crate) mod tests {
     fn averages_each_rggb_cell_into_one_grey_byte() {
         let raw = little_endian_samples(&[1023, 1023, 400, 800, 1023, 1023, 800, 400]);
         assert_eq!(
-            grey_half(&raw, 4, 2, 8, Layout::Unpacked16, &Tone::new(0, 1.0), false),
+            grey_half(
+                &frame(&raw, 4, 8, Layout::Unpacked16),
+                &Tone::new(0, 1.0),
+                false
+            ),
             [255, 150]
         );
     }
@@ -672,11 +681,12 @@ pub(crate) mod tests {
     fn black_stays_black() {
         assert_eq!(
             grey_half(
-                &little_endian_samples(&[0, 0, 0, 0]),
-                2,
-                2,
-                4,
-                Layout::Unpacked16,
+                &frame(
+                    &little_endian_samples(&[0, 0, 0, 0]),
+                    2,
+                    4,
+                    Layout::Unpacked16
+                ),
                 &Tone::imx708(),
                 false
             ),
@@ -701,11 +711,11 @@ pub(crate) mod tests {
             64, 64, 64, 64, 1023, 1023, 1023, 1023, 64, 64, 64, 64, 1023, 1023, 1023, 1023,
         ]);
         assert_eq!(
-            grey_half(&raw, 8, 2, 16, Layout::Unpacked16, &tone, false),
+            grey_half(&frame(&raw, 8, 16, Layout::Unpacked16), &tone, false),
             [0, 0, 255, 255]
         );
         assert_eq!(
-            grey_half(&raw, 8, 2, 16, Layout::Unpacked16, &tone, true),
+            grey_half(&frame(&raw, 8, 16, Layout::Unpacked16), &tone, true),
             [255, 255, 0, 0]
         );
     }
@@ -733,8 +743,8 @@ pub(crate) mod tests {
         let unpacked = little_endian_samples(&samples);
         let packed = packed10(&samples);
         assert_eq!(
-            grey_half(&packed, 4, 2, 5, Layout::Packed10, &tone, false),
-            grey_half(&unpacked, 4, 2, 8, Layout::Unpacked16, &tone, false)
+            grey_half(&frame(&packed, 4, 5, Layout::Packed10), &tone, false),
+            grey_half(&frame(&unpacked, 4, 8, Layout::Unpacked16), &tone, false)
         );
     }
 
@@ -747,8 +757,8 @@ pub(crate) mod tests {
             .flat_map(|row| [row, &[0xff; 8][..]].concat())
             .collect();
         assert_eq!(
-            grey_half(&padded, 4, 2, 16, Layout::Unpacked16, &tone, false),
-            grey_half(&packed, 4, 2, 8, Layout::Unpacked16, &tone, false)
+            grey_half(&frame(&padded, 4, 16, Layout::Unpacked16), &tone, false),
+            grey_half(&frame(&packed, 4, 8, Layout::Unpacked16), &tone, false)
         );
     }
 
@@ -808,11 +818,7 @@ pub(crate) mod tests {
             tone,
             gains,
             &conversion,
-            Images {
-                rgb: &mut rgb,
-                averaged: None,
-                nv12: None,
-            },
+            rgb_only(&mut rgb),
             &mut Buffers::default(),
         );
         rgb
@@ -826,11 +832,7 @@ pub(crate) mod tests {
             tone,
             gains,
             &conversion,
-            Images {
-                rgb: &mut rgb,
-                averaged: None,
-                nv12: None,
-            },
+            rgb_only(&mut rgb),
             &mut Buffers::default(),
         );
         rgb
@@ -848,11 +850,7 @@ pub(crate) mod tests {
             tone,
             UNITY,
             &conversion,
-            Images {
-                rgb: &mut Vec::new(),
-                averaged: None,
-                nv12: None,
-            },
+            rgb_only(&mut Vec::new()),
             &mut Buffers::default(),
         )
         .green_mean
@@ -872,11 +870,7 @@ pub(crate) mod tests {
             &tone,
             UNITY,
             &conversion,
-            Images {
-                rgb: &mut Vec::new(),
-                averaged: None,
-                nv12: None,
-            },
+            rgb_only(&mut Vec::new()),
             &mut Buffers::default(),
         )
         .channel_means
@@ -899,13 +893,8 @@ pub(crate) mod tests {
 
     #[test]
     fn demosaics_each_rggb_cell_into_one_rgb_pixel() {
-        let frame = RawFrame {
-            raw: &two_cells(),
-            width: 4,
-            height: 2,
-            row_stride: 6,
-            layout: Layout::Packed12,
-        };
+        let raw = two_cells();
+        let frame = packed12_frame(&raw, 4, 6);
         assert_eq!(
             rgb_half(&frame, &linear_tone(), UNITY, false),
             [255, 0, 85, 0, 170, 255]
@@ -914,13 +903,8 @@ pub(crate) mod tests {
 
     #[test]
     fn a_rotated_image_keeps_each_pixel_red_green_blue() {
-        let frame = RawFrame {
-            raw: &two_cells(),
-            width: 4,
-            height: 2,
-            row_stride: 6,
-            layout: Layout::Packed12,
-        };
+        let raw = two_cells();
+        let frame = packed12_frame(&raw, 4, 6);
         assert_eq!(
             rgb_half(&frame, &linear_tone(), UNITY, true),
             [0, 170, 255, 255, 0, 85]
@@ -930,40 +914,56 @@ pub(crate) mod tests {
     #[test]
     fn white_balance_gains_scale_red_and_blue_above_the_black_level() {
         let raw = packed12(&[256 + 400, 256 + 400, 256 + 400, 256 + 400]);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 2,
-            height: 2,
-            row_stride: 3,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 2, 3);
         let tone = Tone::with_sample_bits(256, 1.0, 12);
         let gains = Gains {
             red: 2.0,
-            blue: 0.5,
+            blue: 1.5,
         };
         let grey = tone.grey(256 + 400);
         assert_eq!(
             rgb_half(&frame, &tone, gains, false),
-            [tone.grey(256 + 800), grey, tone.grey(256 + 200)]
+            [tone.grey(256 + 800), grey, tone.grey(256 + 600)]
         );
     }
 
     #[test]
     fn a_gain_saturates_at_full_scale() {
         let raw = packed12(&[4000, 100, 100, 4000]);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 2,
-            height: 2,
-            row_stride: 3,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 2, 3);
         let gains = Gains {
             red: 4.0,
             blue: 4.0,
         };
         assert_eq!(rgb_half(&frame, &linear_tone(), gains, false)[0], 255);
+    }
+
+    #[test]
+    fn clipped_highlights_stay_white_under_a_gain_below_one() {
+        let raw = padded_packed12(&[4095; 4 * 4], 4, 6);
+        let frame = packed12_frame(&raw, 4, 6);
+        let tone = Tone::with_sample_bits(256, 2.2, 12);
+        let gains = Gains {
+            red: 0.5,
+            blue: 1.5,
+        };
+        assert_eq!(rgb_half(&frame, &tone, gains, false), [255; 2 * 2 * 3]);
+        assert_eq!(rgb_full(&frame, &tone, gains, false), [255; 4 * 4 * 3]);
+    }
+
+    #[test]
+    fn a_gain_below_one_raises_the_other_channels_instead() {
+        let raw = packed12(&[1000, 1000, 1000, 1000]);
+        let frame = packed12_frame(&raw, 2, 3);
+        let gains = Gains {
+            red: 0.5,
+            blue: 1.0,
+        };
+        let tone = linear_tone();
+        assert_eq!(
+            rgb_half(&frame, &tone, gains, false),
+            [tone.grey(1000), tone.grey(2000), tone.grey(2000)]
+        );
     }
 
     // 8-bit samples through an 8-bit linear tone come out unchanged.
@@ -995,13 +995,7 @@ pub(crate) mod tests {
     #[test]
     fn full_output_interpolates_each_pixels_missing_colours_from_its_neighbours() {
         let raw = padded_packed12(&FOUR_BY_FOUR, 4, 8);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 4,
-            height: 4,
-            row_stride: 8,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 4, 8);
         #[rustfmt::skip]
         let expected = [
             200, 30, 4,    180, 10, 4,    160, 45, 6,    160, 30, 8,
@@ -1019,13 +1013,7 @@ pub(crate) mod tests {
             .flat_map(|row| (0..6).map(move |column| cells[(row % 2) * 2 + column % 2]))
             .collect();
         let raw = padded_packed12(&samples, 6, 12);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 6,
-            height: 4,
-            row_stride: 12,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 6, 12);
         let tone = linear_tone();
         let pixel = [tone.grey(1000), tone.grey(2000), tone.grey(3000)];
         assert_eq!(rgb_full(&frame, &tone, UNITY, false), pixel.repeat(24));
@@ -1034,33 +1022,21 @@ pub(crate) mod tests {
     #[test]
     fn full_output_scales_red_and_blue_by_the_white_balance_gains() {
         let raw = padded_packed12(&[100; 16], 4, 6);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 4,
-            height: 4,
-            row_stride: 6,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 4, 6);
         let gains = Gains {
             red: 2.0,
-            blue: 0.5,
+            blue: 1.5,
         };
         assert_eq!(
             rgb_full(&frame, &identity_tone(), gains, false),
-            [200, 100, 50].repeat(16)
+            [200, 100, 150].repeat(16)
         );
     }
 
     #[test]
     fn a_rotated_full_image_reverses_the_pixels_each_red_green_blue() {
         let raw = padded_packed12(&FOUR_BY_FOUR, 4, 6);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 4,
-            height: 4,
-            row_stride: 6,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 4, 6);
         let upright = rgb_full(&frame, &identity_tone(), UNITY, false);
         let reversed: Vec<u8> = upright.chunks_exact(3).rev().flatten().copied().collect();
         assert_eq!(rgb_full(&frame, &identity_tone(), UNITY, true), reversed);
@@ -1069,13 +1045,7 @@ pub(crate) mod tests {
     #[test]
     fn the_toned_green_mean_is_the_half_outputs_mean_green() {
         let raw = padded_packed12(&FOUR_BY_FOUR, 4, 6);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 4,
-            height: 4,
-            row_stride: 6,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 4, 6);
         let tone = Tone::with_sample_bits(0, 2.2, 8);
         let half = rgb_half(&frame, &tone, UNITY, false);
         let greens: Vec<f64> = half
@@ -1096,13 +1066,7 @@ pub(crate) mod tests {
         let packed = padded_packed12(&samples, 4, 6);
         let padded = padded_packed12(&samples, 4, 10);
         let means = |raw: &[u8], row_stride| {
-            let frame = RawFrame {
-                raw,
-                width: 4,
-                height: 2,
-                row_stride,
-                layout: Layout::Packed12,
-            };
+            let frame = packed12_frame(raw, 4, row_stride);
             channel_means(&frame, 0, 1)
         };
         assert_eq!(means(&padded, 10), means(&packed, 6));
@@ -1120,13 +1084,7 @@ pub(crate) mod tests {
             256 + 300,
             100,
         ]);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 4,
-            height: 2,
-            row_stride: 6,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 4, 6);
         assert_eq!(channel_means(&frame, 256, 1), [300.0, 200.0, 25.0]);
     }
 }

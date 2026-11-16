@@ -3,10 +3,12 @@
 use std::ffi::CString;
 use std::fs;
 use std::io;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::ptr;
 
 use crate::bayer::Layout;
 use crate::encoder::{BufferFormat, DequeuedBuffer, M2mDevice, Stream};
+use crate::sensor::{Rectangle, SensorCrop};
 
 const fn ioc(direction: u64, number: u64, size: u64) -> u64 {
     (direction << 30) | (size << 16) | ((b'V' as u64) << 8) | number
@@ -30,6 +32,7 @@ const VIDIOC_STREAMOFF: u64 = ioc(WRITE, 19, 4);
 const VIDIOC_S_PARM: u64 = ioc(READ_WRITE, 22, 204);
 const VIDIOC_ENCODER_CMD: u64 = ioc(READ_WRITE, 77, 40);
 const VIDIOC_S_SELECTION: u64 = ioc(READ_WRITE, 95, 64);
+const VIDIOC_SUBDEV_G_SELECTION: u64 = ioc(READ_WRITE, 61, 64);
 
 const BUF_TYPE_VIDEO_CAPTURE: u32 = 1;
 const BUF_TYPE_VIDEO_OUTPUT: u32 = 2;
@@ -42,6 +45,8 @@ const COLORSPACE_SMPTE170M: u32 = 1;
 const YCBCR_ENC_601: u8 = 1;
 const QUANTIZATION_LIM_RANGE: u8 = 2;
 const SEL_TGT_CROP: u32 = 0;
+const SEL_TGT_CROP_BOUNDS: u32 = 2;
+const SUBDEV_FORMAT_ACTIVE: u32 = 1;
 const ENC_CMD_STOP: u32 = 1;
 const CTRL_FLAG_DISABLED: u32 = 0x0001;
 const CAP_DEVICE_CAPS: u32 = 0x8000_0000;
@@ -228,6 +233,21 @@ struct Selection {
     _reserved: [u32; 9],
 }
 
+/// `v4l2_subdev_selection`.
+#[repr(C)]
+struct SubdevSelection {
+    which: u32,
+    pad: u32,
+    target: u32,
+    flags: u32,
+    left: i32,
+    top: i32,
+    width: u32,
+    height: u32,
+    stream: u32,
+    _reserved: [u32; 7],
+}
+
 #[repr(C)]
 struct EncoderCommand {
     command: u32,
@@ -249,22 +269,85 @@ struct OutputParameters {
     _rest: [u8; 200 - 40],
 }
 
-fn xioctl<T>(fd: i32, request: u64, argument: &mut T) -> io::Result<()> {
+/// Runs the ioctl `request` on `fd` with `argument`, again while a signal interrupts it.
+///
+/// # Safety
+///
+/// `T` is the struct `request` is defined for, whose size it encodes, and each
+/// pointer in `argument` points at memory valid for what the ioctl does with it.
+unsafe fn xioctl<T>(fd: i32, request: u64, argument: &mut T) -> io::Result<()> {
+    debug_assert_eq!(std::mem::size_of::<T>() as u64, (request >> 16) & 0x3fff);
     loop {
-        // SAFETY: `argument` is the struct the request's size encodes.
+        // SAFETY: as the caller guarantees.
         if unsafe { libc::ioctl(fd, request as _, argument as *mut T) } == 0 {
             return Ok(());
         }
         let error = io::Error::last_os_error();
         if error.raw_os_error() != Some(libc::EINTR) {
-            return Err(error);
+            return Err(ioctl_error(error));
         }
     }
 }
 
-fn zeroed<T>() -> T {
-    // SAFETY: only used for the plain-data ioctl structs above.
+/// `EPIPE`, an invalid media pipeline, kept apart from the closed stdout `main` exits 0 on.
+fn ioctl_error(error: io::Error) -> io::Error {
+    if error.raw_os_error() == Some(libc::EPIPE) {
+        io::Error::other(format!("the media pipeline is invalid: {error}"))
+    } else {
+        error
+    }
+}
+
+/// A struct of which all-zero bytes are a valid value.
+///
+/// # Safety
+///
+/// Implemented only for `repr(C)` structs of integers, arrays of them and raw pointers.
+unsafe trait Zeroable {}
+
+// SAFETY: each is a `repr(C)` struct of integers, integer arrays and raw pointers.
+unsafe impl Zeroable for Format {}
+// SAFETY: as above.
+unsafe impl Zeroable for FormatMplane {}
+// SAFETY: as above.
+unsafe impl Zeroable for FormatDescription {}
+// SAFETY: as above.
+unsafe impl Zeroable for Capability {}
+// SAFETY: as above.
+unsafe impl Zeroable for Plane {}
+// SAFETY: as above.
+unsafe impl Zeroable for Buffer {}
+// SAFETY: as above.
+unsafe impl Zeroable for QueryControl {}
+// SAFETY: as above.
+unsafe impl Zeroable for Selection {}
+// SAFETY: as above.
+unsafe impl Zeroable for SubdevSelection {}
+// SAFETY: as above.
+unsafe impl Zeroable for EncoderCommand {}
+// SAFETY: as above.
+unsafe impl Zeroable for OutputParameters {}
+
+fn zeroed<T: Zeroable>() -> T {
+    // SAFETY: all-zero bytes are a valid `T`, as `Zeroable` requires.
     unsafe { std::mem::zeroed() }
+}
+
+/// The crop of a sensor from its `crop` and `bounds` selections: `None` when
+/// the node has no selection API or either rectangle is empty.
+fn sensor_crop(
+    crop: io::Result<Rectangle>,
+    bounds: io::Result<Rectangle>,
+) -> io::Result<Option<SensorCrop>> {
+    let unsupported =
+        |error: &io::Error| matches!(error.raw_os_error(), Some(libc::ENOTTY | libc::EINVAL));
+    let (crop, bounds) = match (crop, bounds) {
+        (Ok(crop), Ok(bounds)) => (crop, bounds),
+        (Err(error), _) | (_, Err(error)) if unsupported(&error) => return Ok(None),
+        (Err(error), _) | (_, Err(error)) => return Err(error),
+    };
+    let empty = |rectangle: Rectangle| rectangle.width == 0 || rectangle.height == 0;
+    Ok((!empty(crop) && !empty(bounds)).then_some(SensorCrop { crop, bounds }))
 }
 
 /// Calls `attempt` until it fails with another error than `waiting`, such as
@@ -303,7 +386,13 @@ pub fn node_named(name: &str) -> io::Result<String> {
 
 /// An open video or subdevice node, closed on drop.
 pub struct Node {
-    pub fd: i32,
+    fd: OwnedFd,
+}
+
+impl AsRawFd for Node {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd.as_raw_fd()
+    }
 }
 
 impl Node {
@@ -315,13 +404,16 @@ impl Node {
         if fd < 0 {
             return Err(io::Error::last_os_error());
         }
+        // SAFETY: `open` just returned this descriptor, which nothing else owns.
+        let fd = unsafe { OwnedFd::from_raw_fd(fd) };
         Ok(Node { fd })
     }
 
     /// Whether the node captures through the multiplanar API, as CAMSS's do.
     pub fn multiplanar(&self) -> io::Result<bool> {
         let mut capability: Capability = zeroed();
-        xioctl(self.fd, VIDIOC_QUERYCAP, &mut capability)?;
+        // SAFETY: VIDIOC_QUERYCAP takes a Capability, which holds no pointer.
+        unsafe { xioctl(self.as_raw_fd(), VIDIOC_QUERYCAP, &mut capability) }?;
         let capabilities = if capability.capabilities & CAP_DEVICE_CAPS != 0 {
             capability.device_caps
         } else {
@@ -330,21 +422,48 @@ impl Node {
         Ok(capabilities & CAP_VIDEO_CAPTURE_MPLANE != 0)
     }
 
+    /// Where the sensor this subdevice node stands for reads its frames
+    /// from, `None` when the node reports no selection.
+    pub fn sensor_crop(&self) -> io::Result<Option<SensorCrop>> {
+        sensor_crop(
+            self.selection(SEL_TGT_CROP),
+            self.selection(SEL_TGT_CROP_BOUNDS),
+        )
+    }
+
+    /// The rectangle of the selection `target` on pad 0 of this subdevice node.
+    fn selection(&self, target: u32) -> io::Result<Rectangle> {
+        let mut selection: SubdevSelection = zeroed();
+        selection.which = SUBDEV_FORMAT_ACTIVE;
+        selection.target = target;
+        // SAFETY: VIDIOC_SUBDEV_G_SELECTION takes a SubdevSelection, which holds no pointer.
+        unsafe { xioctl(self.as_raw_fd(), VIDIOC_SUBDEV_G_SELECTION, &mut selection) }?;
+        Ok(Rectangle {
+            left: selection.left,
+            top: selection.top,
+            width: selection.width,
+            height: selection.height,
+        })
+    }
+
     pub fn control(&self, id: u32) -> io::Result<i32> {
         let mut control = Control { id, value: 0 };
-        xioctl(self.fd, VIDIOC_G_CTRL, &mut control)?;
+        // SAFETY: VIDIOC_G_CTRL takes a Control, which holds no pointer.
+        unsafe { xioctl(self.as_raw_fd(), VIDIOC_G_CTRL, &mut control) }?;
         Ok(control.value)
     }
 
     pub fn set_control(&self, id: u32, value: i32) -> io::Result<()> {
-        xioctl(self.fd, VIDIOC_S_CTRL, &mut Control { id, value })
+        // SAFETY: VIDIOC_S_CTRL takes a Control, which holds no pointer.
+        unsafe { xioctl(self.as_raw_fd(), VIDIOC_S_CTRL, &mut Control { id, value }) }
     }
 
     /// `(minimum, maximum)` of a control.
     pub fn control_range(&self, id: u32) -> io::Result<(i32, i32)> {
         let mut query: QueryControl = zeroed();
         query.id = id;
-        xioctl(self.fd, VIDIOC_QUERYCTRL, &mut query)?;
+        // SAFETY: VIDIOC_QUERYCTRL takes a QueryControl, which holds no pointer.
+        unsafe { xioctl(self.as_raw_fd(), VIDIOC_QUERYCTRL, &mut query) }?;
         Ok((query.minimum, query.maximum))
     }
 
@@ -364,15 +483,10 @@ impl Node {
             _pad: 0,
             controls: &mut control,
         };
-        xioctl(self.fd, VIDIOC_G_EXT_CTRLS, &mut controls)?;
+        // SAFETY: VIDIOC_G_EXT_CTRLS takes ExtControls, whose `controls` points
+        // at the `count` ExtControl in `control`, alive across the call.
+        unsafe { xioctl(self.as_raw_fd(), VIDIOC_G_EXT_CTRLS, &mut controls) }?;
         Ok(control.value64)
-    }
-}
-
-impl Drop for Node {
-    fn drop(&mut self) {
-        // SAFETY: the fd is owned by this node.
-        unsafe { libc::close(self.fd) };
     }
 }
 
@@ -390,9 +504,10 @@ pub struct Capture {
 }
 
 /// A dequeued frame: its buffer index, the frame start in CLOCK_MONOTONIC ns,
-/// the bytes the driver filled and its flags.
+/// the bytes the driver filled and its flags. Queueing it again takes it, which
+/// ends the borrows of its pixels before the driver writes to them.
 pub struct Dequeued {
-    pub index: u32,
+    index: u32,
     pub start_ns: i64,
     pub bytes: usize,
     flags: u32,
@@ -469,7 +584,8 @@ fn formats_offered(node: &Node, kind: u32) -> io::Result<Vec<u32>> {
         let mut description: FormatDescription = zeroed();
         description.index = offered.len() as u32;
         description.kind = kind;
-        match xioctl(node.fd, VIDIOC_ENUM_FMT, &mut description) {
+        // SAFETY: VIDIOC_ENUM_FMT takes a FormatDescription, which holds no pointer.
+        match unsafe { xioctl(node.as_raw_fd(), VIDIOC_ENUM_FMT, &mut description) } {
             Ok(()) => offered.push(description.pixelformat),
             Err(error) if error.raw_os_error() == Some(libc::EINVAL) => return Ok(offered),
             Err(error) => return Err(error),
@@ -477,15 +593,23 @@ fn formats_offered(node: &Node, kind: u32) -> io::Result<Vec<u32>> {
     }
 }
 
+/// The format a node set when asked for one.
+struct FormatReply {
+    width: u32,
+    height: u32,
+    pixel_format: u32,
+    bytes_per_line: u32,
+}
+
 /// Asks `node` for `width` x `height` in `pixelformat` and returns the format
-/// it sets: its size, pixel format and bytes per row.
+/// it sets.
 fn set_format(
     node: &Node,
     multiplanar: bool,
     width: u32,
     height: u32,
     pixelformat: u32,
-) -> io::Result<(u32, u32, u32, u32)> {
+) -> io::Result<FormatReply> {
     if multiplanar {
         let mut format: FormatMplane = zeroed();
         format.kind = BUF_TYPE_VIDEO_CAPTURE_MPLANE;
@@ -493,23 +617,32 @@ fn set_format(
         format.pix.height = height;
         format.pix.pixelformat = pixelformat;
         format.pix.num_planes = 1;
-        xioctl(node.fd, VIDIOC_S_FMT, &mut format)?;
+        // SAFETY: VIDIOC_S_FMT takes a v4l2_format, as large as FormatMplane, whose
+        // multiplanar member holds no pointer.
+        unsafe { xioctl(node.as_raw_fd(), VIDIOC_S_FMT, &mut format) }?;
         let pix = &format.pix;
-        Ok((
-            pix.width,
-            pix.height,
-            pix.pixelformat,
-            pix.plane_fmt[0].bytesperline,
-        ))
+        Ok(FormatReply {
+            width: pix.width,
+            height: pix.height,
+            pixel_format: pix.pixelformat,
+            bytes_per_line: pix.plane_fmt[0].bytesperline,
+        })
     } else {
         let mut format: Format = zeroed();
         format.kind = BUF_TYPE_VIDEO_CAPTURE;
         format.pix.width = width;
         format.pix.height = height;
         format.pix.pixelformat = pixelformat;
-        xioctl(node.fd, VIDIOC_S_FMT, &mut format)?;
+        // SAFETY: VIDIOC_S_FMT takes a v4l2_format, as large as Format, whose
+        // single-plane member holds no pointer.
+        unsafe { xioctl(node.as_raw_fd(), VIDIOC_S_FMT, &mut format) }?;
         let pix = &format.pix;
-        Ok((pix.width, pix.height, pix.pixelformat, pix.bytesperline))
+        Ok(FormatReply {
+            width: pix.width,
+            height: pix.height,
+            pixel_format: pix.pixelformat,
+            bytes_per_line: pix.bytesperline,
+        })
     }
 }
 
@@ -533,10 +666,9 @@ impl Capture {
         let (layout, bytesperline) = negotiate(
             sample_bits,
             |pixelformat| {
-                let (set_width, set_height, set, bytesperline) =
-                    set_format(&node, multiplanar, width, height, pixelformat)?;
-                set_size = (set_width, set_height);
-                Ok((set, bytesperline))
+                let reply = set_format(&node, multiplanar, width, height, pixelformat)?;
+                set_size = (reply.width, reply.height);
+                Ok((reply.pixel_format, reply.bytes_per_line))
             },
             || formats_offered(&node, kind),
         )?;
@@ -567,7 +699,8 @@ impl Capture {
             flags: MEMORY_FLAG_NON_COHERENT,
             _reserved: [0; 3],
         };
-        xioctl(node.fd, VIDIOC_REQBUFS, &mut request)?;
+        // SAFETY: VIDIOC_REQBUFS takes RequestBuffers, which holds no pointer.
+        unsafe { xioctl(node.as_raw_fd(), VIDIOC_REQBUFS, &mut request) }?;
 
         let mut capture = Capture {
             node,
@@ -591,7 +724,7 @@ impl Capture {
                     length as usize,
                     libc::PROT_READ,
                     libc::MAP_SHARED,
-                    capture.node.fd,
+                    capture.node.as_raw_fd(),
                     offset as libc::off_t,
                 )
             };
@@ -599,10 +732,11 @@ impl Capture {
                 return Err(io::Error::last_os_error());
             }
             capture.buffers.push((address, length as usize));
-            capture.queue(index)?;
+            capture.queue_index(index)?;
         }
         let mut stream_kind = kind as i32;
-        xioctl(capture.node.fd, VIDIOC_STREAMON, &mut stream_kind)?;
+        // SAFETY: VIDIOC_STREAMON takes the buffer type as an int.
+        unsafe { xioctl(capture.node.as_raw_fd(), VIDIOC_STREAMON, &mut stream_kind) }?;
         Ok(capture)
     }
 
@@ -618,11 +752,19 @@ impl Capture {
             buffer.offset = &mut plane as *mut Plane as u64;
             buffer.length = 1;
         }
-        xioctl(self.node.fd, request, &mut buffer)?;
+        debug_assert!([VIDIOC_QUERYBUF, VIDIOC_QBUF, VIDIOC_DQBUF].contains(&request));
+        // SAFETY: the buffer ioctls take a Buffer, whose planes, on a multiplanar
+        // node, are the one `plane` alive across the call.
+        unsafe { xioctl(self.node.as_raw_fd(), request, &mut buffer) }?;
         Ok((buffer, plane))
     }
 
-    pub fn queue(&self, index: u32) -> io::Result<()> {
+    /// Gives `frame`'s buffer back to the driver to fill.
+    pub fn queue(&self, frame: Dequeued) -> io::Result<()> {
+        self.queue_index(frame.index)
+    }
+
+    fn queue_index(&self, index: u32) -> io::Result<()> {
         self.buffer_ioctl(VIDIOC_QBUF, index).map(|_| ())
     }
 
@@ -649,10 +791,10 @@ impl Capture {
         complete(frame.flags, frame.bytes, self.row_stride, self.height)
     }
 
-    pub fn pixels(&self, frame: &Dequeued) -> &[u8] {
+    pub fn pixels<'a>(&'a self, frame: &'a Dequeued) -> &'a [u8] {
         let (address, length) = self.buffers[frame.index as usize];
-        // SAFETY: the buffer stays mapped for the life of `self` and the driver
-        // does not write to it until it is queued again.
+        // SAFETY: the buffer stays mapped for the life of `self`, and the driver
+        // does not write to it until `queue` takes `frame`, which ends this borrow.
         unsafe { std::slice::from_raw_parts(address as *const u8, frame.bytes.min(length)) }
     }
 }
@@ -702,7 +844,8 @@ impl M2mNode {
     pub fn open_named(name: &str) -> io::Result<M2mNode> {
         let node = Node::open(&node_named(name)?)?;
         let mut capability: Capability = zeroed();
-        xioctl(node.fd, VIDIOC_QUERYCAP, &mut capability)?;
+        // SAFETY: VIDIOC_QUERYCAP takes a Capability, which holds no pointer.
+        unsafe { xioctl(node.as_raw_fd(), VIDIOC_QUERYCAP, &mut capability) }?;
         if capability.device_caps & CAP_VIDEO_M2M_MPLANE == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -733,7 +876,10 @@ impl M2mNode {
         prepare(&mut buffer, &mut plane);
         buffer.offset = &mut plane as *mut Plane as u64;
         buffer.length = 1;
-        xioctl(self.node.fd, request, &mut buffer)?;
+        debug_assert!([VIDIOC_QUERYBUF, VIDIOC_QBUF, VIDIOC_DQBUF].contains(&request));
+        // SAFETY: the buffer ioctls take a Buffer, whose planes are the one
+        // `plane` alive across the call.
+        unsafe { xioctl(self.node.as_raw_fd(), request, &mut buffer) }?;
         Ok((buffer, plane))
     }
 }
@@ -758,7 +904,9 @@ impl M2mDevice for M2mNode {
             format.pix.ycbcr_enc = YCBCR_ENC_601;
             format.pix.quantization = QUANTIZATION_LIM_RANGE;
         }
-        xioctl(self.node.fd, VIDIOC_S_FMT, &mut format)?;
+        // SAFETY: VIDIOC_S_FMT takes a v4l2_format, as large as FormatMplane, whose
+        // multiplanar member holds no pointer.
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_S_FMT, &mut format) }?;
         let pix = &format.pix;
         Ok(BufferFormat {
             width: pix.width,
@@ -774,7 +922,8 @@ impl M2mDevice for M2mNode {
         selection.target = SEL_TGT_CROP;
         selection.width = width;
         selection.height = height;
-        xioctl(self.node.fd, VIDIOC_S_SELECTION, &mut selection)?;
+        // SAFETY: VIDIOC_S_SELECTION takes a Selection, which holds no pointer.
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_S_SELECTION, &mut selection) }?;
         Ok((selection.width, selection.height))
     }
 
@@ -783,13 +932,16 @@ impl M2mDevice for M2mNode {
         parameters.kind = BUF_TYPE_VIDEO_OUTPUT_MPLANE;
         parameters.numerator = 1;
         parameters.denominator = fps;
-        xioctl(self.node.fd, VIDIOC_S_PARM, &mut parameters)
+        // SAFETY: VIDIOC_S_PARM takes a v4l2_streamparm, as large as OutputParameters,
+        // whose output member holds no pointer.
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_S_PARM, &mut parameters) }
     }
 
     fn has_control(&self, id: u32) -> bool {
         let mut query: QueryControl = zeroed();
         query.id = id;
-        xioctl(self.node.fd, VIDIOC_QUERYCTRL, &mut query).is_ok()
+        // SAFETY: VIDIOC_QUERYCTRL takes a QueryControl, which holds no pointer.
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_QUERYCTRL, &mut query) }.is_ok()
             && query.flags & CTRL_FLAG_DISABLED == 0
     }
 
@@ -806,7 +958,8 @@ impl M2mDevice for M2mNode {
             flags: 0,
             _reserved: [0; 3],
         };
-        xioctl(self.node.fd, VIDIOC_REQBUFS, &mut request)?;
+        // SAFETY: VIDIOC_REQBUFS takes RequestBuffers, which holds no pointer.
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_REQBUFS, &mut request) }?;
         let protection = match stream {
             Stream::Raw => libc::PROT_READ | libc::PROT_WRITE,
             Stream::Coded => libc::PROT_READ,
@@ -821,7 +974,7 @@ impl M2mDevice for M2mNode {
                     plane.length as usize,
                     protection,
                     libc::MAP_SHARED,
-                    self.node.fd,
+                    self.node.as_raw_fd(),
                     plane.mem_offset as libc::off_t,
                 )
             };
@@ -891,21 +1044,17 @@ impl M2mDevice for M2mNode {
 
     fn wait(&mut self, stream: Stream, timeout: std::time::Duration) -> io::Result<()> {
         let mut polled = libc::pollfd {
-            fd: self.node.fd,
+            fd: self.node.as_raw_fd(),
             events: match stream {
                 Stream::Raw => libc::POLLOUT,
                 Stream::Coded => libc::POLLIN,
             },
             revents: 0,
         };
-        let timeout_ms = timeout.as_millis().clamp(1, i32::MAX as u128) as i32;
-        // SAFETY: one valid pollfd.
-        if unsafe { libc::poll(&mut polled, 1, timeout_ms) } < 0 {
-            let error = io::Error::last_os_error();
-            if error.raw_os_error() != Some(libc::EINTR) {
-                return Err(error);
-            }
-        }
+        crate::poll(
+            std::slice::from_mut(&mut polled),
+            timeout.max(std::time::Duration::from_millis(1)),
+        )?;
         if polled.revents & libc::POLLERR != 0 {
             return Err(io::Error::other("the encoder's queues stopped"));
         }
@@ -914,18 +1063,21 @@ impl M2mDevice for M2mNode {
 
     fn stream_on(&mut self, stream: Stream) -> io::Result<()> {
         let mut kind = buffer_kind(stream) as i32;
-        xioctl(self.node.fd, VIDIOC_STREAMON, &mut kind)
+        // SAFETY: VIDIOC_STREAMON takes the buffer type as an int.
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_STREAMON, &mut kind) }
     }
 
     fn stream_off(&mut self, stream: Stream) -> io::Result<()> {
         let mut kind = buffer_kind(stream) as i32;
-        xioctl(self.node.fd, VIDIOC_STREAMOFF, &mut kind)
+        // SAFETY: VIDIOC_STREAMOFF takes the buffer type as an int.
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_STREAMOFF, &mut kind) }
     }
 
     fn stop_encoding(&mut self) -> io::Result<()> {
         let mut command: EncoderCommand = zeroed();
         command.command = ENC_CMD_STOP;
-        xioctl(self.node.fd, VIDIOC_ENCODER_CMD, &mut command)
+        // SAFETY: VIDIOC_ENCODER_CMD takes an EncoderCommand, which holds no pointer.
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_ENCODER_CMD, &mut command) }
     }
 }
 
@@ -933,6 +1085,83 @@ impl M2mDevice for M2mNode {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    const FULL: Rectangle = Rectangle {
+        left: 8,
+        top: 16,
+        width: 4056,
+        height: 3040,
+    };
+    const CENTRE: Rectangle = Rectangle {
+        left: 1048,
+        top: 976,
+        width: 2028,
+        height: 1080,
+    };
+
+    #[test]
+    fn a_sensor_crop_is_its_crop_within_its_bounds() {
+        assert_eq!(
+            sensor_crop(Ok(CENTRE), Ok(FULL)).unwrap(),
+            Some(SensorCrop {
+                crop: CENTRE,
+                bounds: FULL
+            })
+        );
+    }
+
+    #[test]
+    fn a_node_without_selections_or_with_an_empty_one_has_no_sensor_crop() {
+        let error = |code| Err(io::Error::from_raw_os_error(code));
+        assert_eq!(
+            sensor_crop(error(libc::ENOTTY), error(libc::ENOTTY)).unwrap(),
+            None
+        );
+        assert_eq!(sensor_crop(Ok(CENTRE), error(libc::EINVAL)).unwrap(), None);
+        let empty = Rectangle { width: 0, ..FULL };
+        assert_eq!(sensor_crop(Ok(CENTRE), Ok(empty)).unwrap(), None);
+        assert_eq!(
+            sensor_crop(Ok(CENTRE), error(libc::EIO))
+                .unwrap_err()
+                .raw_os_error(),
+            Some(libc::EIO)
+        );
+    }
+
+    #[test]
+    fn a_subdev_selection_is_the_size_its_ioctl_encodes() {
+        assert_eq!(
+            std::mem::size_of::<SubdevSelection>() as u64,
+            (VIDIOC_SUBDEV_G_SELECTION >> 16) & 0x3fff
+        );
+    }
+
+    #[test]
+    fn each_request_encodes_the_size_of_the_struct_it_is_called_with() {
+        let encoded = |request: u64| ((request >> 16) & 0x3fff) as usize;
+        use std::mem::size_of;
+        for (request, size) in [
+            (VIDIOC_QUERYCAP, size_of::<Capability>()),
+            (VIDIOC_ENUM_FMT, size_of::<FormatDescription>()),
+            (VIDIOC_S_FMT, size_of::<Format>()),
+            (VIDIOC_S_FMT, size_of::<FormatMplane>()),
+            (VIDIOC_REQBUFS, size_of::<RequestBuffers>()),
+            (VIDIOC_QUERYBUF, size_of::<Buffer>()),
+            (VIDIOC_QBUF, size_of::<Buffer>()),
+            (VIDIOC_DQBUF, size_of::<Buffer>()),
+            (VIDIOC_STREAMON, size_of::<i32>()),
+            (VIDIOC_STREAMOFF, size_of::<i32>()),
+            (VIDIOC_G_CTRL, size_of::<Control>()),
+            (VIDIOC_S_CTRL, size_of::<Control>()),
+            (VIDIOC_QUERYCTRL, size_of::<QueryControl>()),
+            (VIDIOC_G_EXT_CTRLS, size_of::<ExtControls>()),
+            (VIDIOC_S_PARM, size_of::<OutputParameters>()),
+            (VIDIOC_ENCODER_CMD, size_of::<EncoderCommand>()),
+            (VIDIOC_S_SELECTION, size_of::<Selection>()),
+        ] {
+            assert_eq!(encoded(request), size, "request {request:#x}");
+        }
+    }
 
     #[test]
     fn the_ioctl_structs_have_the_kernel_sizes() {
@@ -945,6 +1174,11 @@ mod tests {
         assert_eq!(std::mem::size_of::<Selection>(), 64);
         assert_eq!(std::mem::size_of::<EncoderCommand>(), 40);
         assert_eq!(std::mem::size_of::<OutputParameters>(), 204);
+        assert_eq!(std::mem::size_of::<RequestBuffers>(), 20);
+        assert_eq!(std::mem::size_of::<Control>(), 8);
+        assert_eq!(std::mem::size_of::<QueryControl>(), 68);
+        assert_eq!(std::mem::size_of::<ExtControl>(), 20);
+        assert_eq!(std::mem::size_of::<ExtControls>(), 32);
     }
 
     #[test]
@@ -1041,6 +1275,15 @@ mod tests {
         assert!(!complete(BUF_FLAG_ERROR, 3_072 * 1_080, 3_072, 1_080));
         assert!(!complete(0, 3_072 * 1_079, 3_072, 1_080));
         assert!(!complete(0, 0, 3_072, 1_080));
+    }
+
+    #[test]
+    fn an_ioctl_refused_with_epipe_is_no_closed_host() {
+        let error = ioctl_error(io::Error::from_raw_os_error(libc::EPIPE));
+        assert_ne!(error.kind(), io::ErrorKind::BrokenPipe);
+        assert!(error.to_string().contains("os error 32"), "{error}");
+        let busy = ioctl_error(io::Error::from_raw_os_error(libc::EBUSY));
+        assert_eq!(busy.kind(), io::ErrorKind::ResourceBusy);
     }
 
     #[test]
