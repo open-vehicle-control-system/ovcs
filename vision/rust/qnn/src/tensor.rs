@@ -30,7 +30,7 @@ pub struct Tensor {
     pub bytes: usize,
 }
 
-/// How far a pixel value's scale times 255 may be from 1.
+/// How far a pixel value's scale times 255 may be from 1: a converter stores 1/255 rounded.
 const PIXEL_SCALE_TOLERANCE: f32 = 1e-2;
 
 impl Tensor {

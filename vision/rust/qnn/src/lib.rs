@@ -93,7 +93,7 @@ impl Drop for Session {
             if let (false, Some(free)) = (self.context.is_null(), interface.contextFree) {
                 free(self.context, ptr::null_mut());
             }
-            // The vote is the device's infrastructure's.
+            // Before `deviceFree`: the vote is held in the device's infrastructure.
             drop(std::mem::replace(&mut self.power_vote, Vote::NotAsked));
             if let (false, Some(free)) = (self.device.is_null(), interface.deviceFree) {
                 free(self.device);
