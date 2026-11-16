@@ -5,7 +5,10 @@ use std::io;
 use framing::metadata_record;
 
 use crate::settings::Settings;
-use crate::EXPOSURE_GAIN_PRESENT;
+
+// The metadata record's slots of the exposure time and the gain.
+const EXPOSURE_US_SLOT: usize = 0;
+const GAIN_SLOT: usize = 1;
 
 /// A sensor's exposure time and analogue gain.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -19,9 +22,10 @@ impl Exposure {
     /// stamped with a frame start.
     pub fn record(self, capture_ns: i64) -> Vec<u8> {
         let mut values = [0.0; framing::METADATA_FIELDS];
-        values[0] = self.exposure_us;
-        values[1] = self.gain;
-        metadata_record(capture_ns, EXPOSURE_GAIN_PRESENT, &values)
+        values[EXPOSURE_US_SLOT] = self.exposure_us;
+        values[GAIN_SLOT] = self.gain;
+        let present = (1 << EXPOSURE_US_SLOT) | (1 << GAIN_SLOT);
+        metadata_record(capture_ns, present, &values)
     }
 }
 

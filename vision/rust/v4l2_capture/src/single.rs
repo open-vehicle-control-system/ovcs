@@ -117,8 +117,9 @@ pub fn run(
 
 /// The sysfs name of the video encoder node: Qualcomm's Iris, on the VENTUNO Q.
 const VIDEO_ENCODER: &str = "qcom-iris-encoder";
-// Metadata slots 2 (red gain) and 3 (blue gain).
-const WHITE_BALANCE_PRESENT: u8 = 0b1100;
+// The metadata record's slots of the white balance gains.
+const RED_GAIN_SLOT: usize = 2;
+const BLUE_GAIN_SLOT: usize = 3;
 
 /// An encoder for each output of `arguments` sent as H.264, in their order,
 /// started at the camera's frame rate.
@@ -161,9 +162,10 @@ fn start_encoders(
 /// starting at `capture_ns`.
 fn white_balance_record(gains: Gains, capture_ns: i64) -> Vec<u8> {
     let mut values = [0.0; framing::METADATA_FIELDS];
-    values[2] = gains.red;
-    values[3] = gains.blue;
-    metadata_record(capture_ns, WHITE_BALANCE_PRESENT, &values)
+    values[RED_GAIN_SLOT] = gains.red;
+    values[BLUE_GAIN_SLOT] = gains.blue;
+    let present = (1 << RED_GAIN_SLOT) | (1 << BLUE_GAIN_SLOT);
+    metadata_record(capture_ns, present, &values)
 }
 
 /// Where the frame loop takes its frames from.

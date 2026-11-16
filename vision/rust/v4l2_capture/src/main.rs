@@ -39,8 +39,6 @@ use framing::{LogLevel, Writer};
 use v4l2::{Capture, Node};
 
 const BUFFERS: u32 = 4;
-// Metadata slots 0 (exposure) and 1 (gain).
-const EXPOSURE_GAIN_PRESENT: u8 = 0b11;
 // How long the sensors may take to register after the program starts.
 const NODE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const NODE_RETRY: std::time::Duration = std::time::Duration::from_millis(200);
