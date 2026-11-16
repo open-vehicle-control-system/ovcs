@@ -163,6 +163,8 @@ pub struct Network {
     io: Io,
     pub input: Shape,
     output_info: hailo_vstream_info_t,
+    /// The order of the output frames read into the output buffer.
+    output_order: hailo_format_order_t,
     /// Size of one output frame, in bytes.
     pub output_bytes: usize,
     input_buffer: PageBuffer,
@@ -199,6 +201,7 @@ impl Network {
             },
             // SAFETY: a plain C struct, filled in below before it is read.
             output_info: unsafe { MaybeUninit::zeroed().assume_init() },
+            output_order: HAILO_FORMAT_ORDER_AUTO,
             output_bytes: 0,
             input_buffer: PageBuffer::new(0, page_bytes),
             output_buffer: PageBuffer::new(0, page_bytes),
@@ -311,6 +314,7 @@ impl Network {
         self.input = Shape::of(input_info.__bindgen_anon_1.__bindgen_anon_1.shape);
         self.output_info.__bindgen_anon_1.shape =
             output_info.__bindgen_anon_1.__bindgen_anon_1.shape;
+        self.output_order = output_info.format.order;
         self.output_bytes = hailo_get_output_stream_frame_size(output);
         self.input_buffer = PageBuffer::new(hailo_get_input_stream_frame_size(input), page_bytes);
         self.output_buffer = PageBuffer::new(self.output_bytes, page_bytes);
@@ -396,6 +400,11 @@ impl Network {
         }
         input_params.truncate(input_count);
         output_params.truncate(output_count);
+        if output_format == HAILO_FORMAT_TYPE_FLOAT32 {
+            // The layout `detection::nms::decode_nms_by_class` reads.
+            output_params[0].params.user_buffer_format.order =
+                HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS;
+        }
         for input_param in &mut input_params {
             input_param.params.timeout_ms = HAILO_DEFAULT_VSTREAM_TIMEOUT_MS;
             input_param.params.queue_size = HAILO_DEFAULT_VSTREAM_QUEUE_SIZE;
@@ -452,6 +461,12 @@ impl Network {
             "hailo_get_output_vstream_info",
         )?;
         self.output_info = output_info.assume_init();
+        let mut output_user_format = MaybeUninit::<hailo_format_t>::zeroed();
+        check(
+            hailo_get_output_vstream_user_format(output, output_user_format.as_mut_ptr()),
+            "hailo_get_output_vstream_user_format",
+        )?;
+        self.output_order = output_user_format.assume_init().order;
         check(
             hailo_get_output_vstream_frame_size(output, &mut self.output_bytes),
             "hailo_get_output_vstream_frame_size",
@@ -483,15 +498,29 @@ impl Network {
         self.output_buffer.as_slice()
     }
 
-    /// The classes an NMS output scores.
-    pub fn nms_classes(&self) -> usize {
-        // SAFETY: the union's NMS view, read for a network opened with an NMS output.
-        unsafe {
+    /// The classes an NMS output scores; `Err` unless the output is an NMS layer whose frames
+    /// are read NMS by class.
+    pub fn nms_classes(&self) -> Result<usize, String> {
+        let nms = matches!(
+            self.output_info.format.order,
+            HAILO_FORMAT_ORDER_HAILO_NMS
+                | HAILO_FORMAT_ORDER_HAILO_NMS_ON_CHIP
+                | HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS
+        );
+        if !nms || self.output_order != HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS {
+            return Err(format!(
+                "expected an NMS output read by class, its order is {}, read as {}",
+                self.output_info.format.order, self.output_order
+            ));
+        }
+        // SAFETY: an NMS output's info holds the union's NMS view.
+        let classes = unsafe {
             self.output_info
                 .__bindgen_anon_1
                 .nms_shape
-                .number_of_classes as usize
-        }
+                .number_of_classes
+        };
+        Ok(classes as usize)
     }
 
     /// The output's shape, for a network whose output is not an NMS layer.

@@ -44,7 +44,9 @@ impl Detect {
         }
         let model_size = input.width;
         Ok(Detect {
-            class_count: network.nms_classes(),
+            class_count: network
+                .nms_classes()
+                .map_err(|message| format!("{hef_path}: {message}"))?,
             model_size: model_size as i32,
             score_threshold,
             jpegs: Arc::clone(jpegs),
