@@ -420,14 +420,18 @@ mod tests {
     use super::*;
     use std::os::fd::AsFd;
 
-    #[test]
-    fn a_pipe_hangs_up_once_its_writing_end_closes() {
+    // A pipe's reading and writing ends.
+    fn pipe() -> (File, File) {
         let mut ends = [0; 2];
         // SAFETY: `ends` has room for the two descriptors.
         assert_eq!(unsafe { libc_pipe(ends.as_mut_ptr()) }, 0);
         // SAFETY: both descriptors were just created and nothing else owns them.
-        let (pipe_out, pipe_in) =
-            unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) };
+        unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) }
+    }
+
+    #[test]
+    fn a_pipe_hangs_up_once_its_writing_end_closes() {
+        let (pipe_out, pipe_in) = pipe();
 
         assert!(!hung_up(pipe_out.as_fd()));
         drop(pipe_in);
@@ -436,12 +440,7 @@ mod tests {
 
     #[test]
     fn a_pipe_is_enlarged_to_the_size_asked_or_to_one_mebibyte() {
-        let mut ends = [0; 2];
-        // SAFETY: `ends` has room for the two descriptors.
-        assert_eq!(unsafe { libc_pipe(ends.as_mut_ptr()) }, 0);
-        // SAFETY: both descriptors were just created and nothing else owns them.
-        let (pipe_out, _pipe_in) =
-            unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) };
+        let (pipe_out, _pipe_in) = pipe();
 
         assert_eq!(
             enlarge_pipe(pipe_out.as_fd(), 256 << 10).unwrap(),
@@ -456,12 +455,7 @@ mod tests {
 
     // A writer and the end its records are read from.
     fn piped_writer() -> (Writer, File) {
-        let mut ends = [0; 2];
-        // SAFETY: `ends` has room for the two descriptors.
-        assert_eq!(unsafe { libc_pipe(ends.as_mut_ptr()) }, 0);
-        // SAFETY: both descriptors were just created and nothing else owns them.
-        let (pipe_out, pipe_in) =
-            unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) };
+        let (pipe_out, pipe_in) = pipe();
         (Writer::from_file(pipe_in), pipe_out)
     }
 

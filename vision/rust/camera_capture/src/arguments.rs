@@ -497,22 +497,24 @@ mod tests {
         }
     }
 
+    // An ISP output and a JPEG of it.
+    const OUTPUT_FLAGS: [&str; 4] = [
+        "--output",
+        "isp:1152x648:unsent",
+        "--output",
+        "from:0:1152x648:jpeg:80",
+    ];
+
     #[test]
     fn outputs_are_made_on_every_frame_unless_capped() {
-        let flags = [
-            "--output",
-            "isp:1152x648:unsent",
-            "--output",
-            "from:0:1152x648:jpeg:80",
-        ];
-        assert_eq!(parse(&strings(&flags)).unwrap().outputs_max_hz, None);
+        assert_eq!(parse(&strings(&OUTPUT_FLAGS)).unwrap().outputs_max_hz, None);
         for (max_hz, expected) in [
             ("10", Some(10.0)),
             ("7.5", Some(7.5)),
             ("10.0", Some(10.0)),
             ("0", None),
         ] {
-            let capped = [&flags[..], &["--outputs-max-hz", max_hz]].concat();
+            let capped = [&OUTPUT_FLAGS[..], &["--outputs-max-hz", max_hz]].concat();
             assert_eq!(parse(&strings(&capped)).unwrap().outputs_max_hz, expected);
         }
     }
@@ -520,14 +522,7 @@ mod tests {
     #[test]
     fn an_outputs_cap_is_refused_out_of_range_or_without_outputs() {
         for max_hz in ["-1", "1000.5", "fast", "NaN", "inf"] {
-            let flags = [
-                "--output",
-                "isp:1152x648:unsent",
-                "--output",
-                "from:0:1152x648:jpeg:80",
-                "--outputs-max-hz",
-                max_hz,
-            ];
+            let flags = [&OUTPUT_FLAGS[..], &["--outputs-max-hz", max_hz]].concat();
             assert_eq!(
                 parse(&strings(&flags)),
                 Err(format!(
@@ -544,16 +539,7 @@ mod tests {
 
     #[test]
     fn an_outputs_cap_whose_interval_overflows_a_capture_time_is_refused() {
-        let flags = |max_hz| {
-            strings(&[
-                "--output",
-                "isp:1152x648:unsent",
-                "--output",
-                "from:0:1152x648:jpeg:80",
-                "--outputs-max-hz",
-                max_hz,
-            ])
-        };
+        let flags = |max_hz| strings(&[&OUTPUT_FLAGS[..], &["--outputs-max-hz", max_hz]].concat());
         assert_eq!(
             parse(&flags("1e-11")),
             Err(format!(
