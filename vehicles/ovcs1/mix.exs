@@ -29,7 +29,9 @@ defmodule Ovcs1.MixProject do
   # `InfotainmentCore.Vehicle`, `OvcsBus.Message`, and Cantastic
   # — all pulled in transitively. `ovcs_vehicle` supplies the
   # top-level `OvcsVehicle` behaviour and doesn't sit in any firmware
-  # dep tree, so it stays explicit.
+  # dep tree, so it stays explicit. `simulator_core` holds the simulated
+  # components `Ovcs1.Simulator` names, on the targets the `ros` bridge
+  # builds it for; the simulator runner runs them, not the vehicle.
   defp deps do
     [
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
@@ -37,6 +39,10 @@ defmodule Ovcs1.MixProject do
       {:infotainment_firmware, path: "../../infotainment/firmware"},
       {:bridge_firmware, path: "../../bridges/firmware"},
       {:vision_firmware, path: "../../vision/firmware"},
+      {:simulator_core,
+       path: "../../simulator/core",
+       targets: [:host, :ovcs_base_can_system_rpi4, :rpi5],
+       runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
