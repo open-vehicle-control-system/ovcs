@@ -93,23 +93,11 @@ fn main() -> ExitCode {
     }
 }
 
-/// `Err(BrokenPipe)` once the host has closed stdin, which ends a startup wait.
-fn host_present() -> io::Result<()> {
-    if framing::hung_up(io::stdin().as_fd()) {
-        Err(io::Error::new(
-            io::ErrorKind::BrokenPipe,
-            "the host closed stdin",
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 /// The `/dev` path of the node named `name`, waiting for a node the kernel has
 /// not registered yet, as when the program starts while the sensors still probe.
 fn wait_for_node(name: &str) -> io::Result<String> {
     v4l2::retry(NODE_TIMEOUT, NODE_RETRY, io::ErrorKind::NotFound, || {
-        host_present()?;
+        framing::host_present()?;
         v4l2::node_named(name)
     })
 }
@@ -118,7 +106,7 @@ fn open_camera(nodes: &arguments::Nodes, width: u32, height: u32) -> io::Result<
     let model = nodes.model;
     let has_lens = model.has_lens();
     let open = || -> io::Result<Camera> {
-        host_present()?;
+        framing::host_present()?;
         let sensor = Node::open(&wait_for_node(&nodes.sensor)?)?;
         let node = Node::open(&wait_for_node(&nodes.video)?)?;
         let lens = sensor::lens_name(&nodes.sensor)

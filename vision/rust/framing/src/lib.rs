@@ -6,7 +6,7 @@ pub mod output_flag;
 
 use std::fs::File;
 use std::io::{self, IoSlice, Read, Write};
-use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, RawFd};
 use std::sync::{Arc, Mutex, TryLockError};
 use std::time::{Duration, Instant};
 
@@ -139,10 +139,22 @@ fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Result<b
     }
 }
 
-/// Whether the other end of the pipe `descriptor` reads from has closed, as
-/// the host does when it closes the Port: a program waiting at startup stops
-/// then instead of holding its devices.
-pub fn hung_up(descriptor: BorrowedFd<'_>) -> bool {
+/// `Err(BrokenPipe)` once the host has closed stdin, as it does when it closes
+/// the Port: a program waiting at startup stops then instead of holding its
+/// devices.
+pub fn host_present() -> io::Result<()> {
+    if hung_up(io::stdin().as_fd()) {
+        Err(io::Error::new(
+            io::ErrorKind::BrokenPipe,
+            "the host closed stdin",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// Whether the other end of the pipe `descriptor` reads from has closed.
+fn hung_up(descriptor: BorrowedFd<'_>) -> bool {
     let mut polled = PollDescriptor {
         fd: descriptor.as_raw_fd(),
         events: 0,
