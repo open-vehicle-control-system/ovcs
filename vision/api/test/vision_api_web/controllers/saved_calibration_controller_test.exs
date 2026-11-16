@@ -411,6 +411,8 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
     test "puts a saved pose in use", %{conn: conn, config: config} do
       pose = VisionApiWeb.CalibrationCase.pose()
       :ok = VisionCore.Camera.Pose.commit(config, :hq, pose)
+      # The recorder saves the pose in use when it takes the change: before the next commit.
+      :sys.get_state(Recorder)
       :ok = VisionCore.Camera.Pose.commit(config, :hq, %{pose | translation: [-0.07, 0.0, 0.0]})
       :sys.get_state(Recorder)
       [_newest, first] = Library.list("hq-pose")
