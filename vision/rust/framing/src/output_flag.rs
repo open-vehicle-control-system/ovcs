@@ -28,6 +28,15 @@ pub fn index(index: &str) -> Result<usize, String> {
         .map_err(|_| format!("no output index {index}"))
 }
 
+/// The lowest JPEG quality that keeps the chroma whole, 4:4:4.
+const FULL_CHROMA_QUALITY: u8 = 90;
+
+/// Whether a JPEG at `quality` has its chroma 4:2:0, as `v4l2_capture`'s JPEG
+/// outputs and `jpeg_codec` encode it.
+pub fn subsamples_chroma(quality: u8) -> bool {
+    quality < FULL_CHROMA_QUALITY
+}
+
 /// A JPEG's quality, 1 to 100.
 pub fn jpeg_quality(quality: &str) -> Result<u8, String> {
     match quality.parse() {
@@ -67,6 +76,14 @@ mod tests {
         assert_eq!(index("3"), Ok(3));
         assert_eq!(index("x"), Err("no output index x".to_string()));
         assert_eq!(index("-1"), Err("no output index -1".to_string()));
+    }
+
+    #[test]
+    fn a_jpegs_chroma_is_subsampled_below_quality_90_only() {
+        assert!(subsamples_chroma(1));
+        assert!(subsamples_chroma(89));
+        assert!(!subsamples_chroma(90));
+        assert!(!subsamples_chroma(100));
     }
 
     #[test]

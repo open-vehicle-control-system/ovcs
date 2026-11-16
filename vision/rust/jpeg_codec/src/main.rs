@@ -326,8 +326,8 @@ fn encode(compressor: &mut Compressor, request: &[u8]) -> Option<Vec<u8>> {
     compress(compressor, pixels, (width, height), format, quality)
 }
 
-/// Grey or RGB `pixels` as a JPEG, its chroma 4:2:0 below quality 90 and
-/// 4:4:4 from 90 up. The caller checks that `pixels` holds the image.
+/// Grey or RGB `pixels` as a JPEG, its chroma 4:2:0 or 4:4:4 as
+/// `framing::output_flag::subsamples_chroma` says. The caller checks that `pixels` holds the image.
 fn compress(
     compressor: &mut Compressor,
     pixels: &[u8],
@@ -337,7 +337,7 @@ fn compress(
 ) -> Option<Vec<u8>> {
     let subsamp = match format {
         PixelFormat::GRAY => Subsamp::Gray,
-        _ if quality < 90 => Subsamp::Sub2x2,
+        _ if framing::output_flag::subsamples_chroma(quality) => Subsamp::Sub2x2,
         _ => Subsamp::None,
     };
     let (width, height) = (usize::from(width), usize::from(height));
@@ -700,7 +700,7 @@ mod tests {
     }
 
     #[test]
-    fn subsamples_the_chroma_below_quality_90_only_as_v4l2_capture_does() {
+    fn subsamples_the_chroma_below_quality_90_only() {
         let rgb = scene_rgb();
         let at =
             |quality| sampling_factors(&reply_to(&request_at(quality, 64, 48, 3, &rgb)).unwrap());

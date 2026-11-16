@@ -93,15 +93,14 @@ pub fn encode_frames(
 }
 
 /// `pixels`, `width` x `height` 8-bit RGB, as a JPEG at `quality`, its
-/// chroma 4:2:0 below quality 90 and 4:4:4 from 90 up, as `jpeg_codec`
-/// encodes.
+/// chroma 4:2:0 or 4:4:4 as `framing::output_flag::subsamples_chroma` says.
 pub fn encode(
     compressor: &mut Compressor,
     pixels: &[u8],
     (width, height): (usize, usize),
     quality: u8,
 ) -> io::Result<Vec<u8>> {
-    let subsampling = if quality < 90 {
+    let subsampling = if framing::output_flag::subsamples_chroma(quality) {
         Subsamp::Sub2x2
     } else {
         Subsamp::None
@@ -119,22 +118,4 @@ pub fn encode(
             })
         })
         .map_err(io::Error::other)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_chroma_is_subsampled_below_quality_90_only_as_jpeg_codec_does() {
-        let pixels: Vec<u8> = (0..16 * 16 * 3).map(|byte| (byte * 7) as u8).collect();
-        let mut compressor = Compressor::new().unwrap();
-        let mut subsampling = |quality| {
-            let jpeg = encode(&mut compressor, &pixels, (16, 16), quality).unwrap();
-            turbojpeg::read_header(&jpeg).unwrap().subsamp
-        };
-        assert_eq!(subsampling(89), Subsamp::Sub2x2);
-        assert_eq!(subsampling(90), Subsamp::None);
-        assert_eq!(subsampling(80), Subsamp::Sub2x2);
-    }
 }
