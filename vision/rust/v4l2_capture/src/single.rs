@@ -50,7 +50,14 @@ pub fn run(
     let encoders = start_encoders(arguments, log)?;
     let camera = open_camera(&arguments.camera, sensor_width, sensor_height)?;
     let sensor = &camera.sensor;
-    let sensor_crop = sensor.sensor_crop()?;
+    // The crop only maps the shading grid: without it the grid spans the frame.
+    let sensor_crop = sensor.sensor_crop().unwrap_or_else(|error| {
+        log(
+            LogLevel::Warning,
+            &format!("sensor crop unread, shading spans the frame: {error}"),
+        );
+        None
+    });
 
     let sensor_size = (sensor_width, sensor_height);
     let timing = FrameTiming::read(sensor, sensor, sensor_size, arguments.fps)?;
