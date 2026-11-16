@@ -10,6 +10,10 @@ use turbojpeg::{Decompressor, Image, PixelFormat};
 /// How many decoded frames the shared decoder keeps.
 const KEPT_FRAMES: usize = 2;
 
+/// The most pixels a decoded JPEG may have: those of the largest RGB image a request holds.
+/// Its header is checked before its pixels are allocated.
+const MAX_PIXELS: usize = crate::MAX_REQUEST_BYTES / 3;
+
 /// A decoded frame: `width` × `height` RGB pixels, row-major.
 #[derive(Debug, PartialEq)]
 pub struct Decoded {
@@ -86,6 +90,11 @@ impl RgbDecoder {
             .read_header(jpeg)
             .map_err(|error| format!("not a JPEG: {error}"))?;
         let (width, height) = (header.width, header.height);
+        if width.saturating_mul(height) > MAX_PIXELS {
+            return Err(format!(
+                "a {width}x{height} JPEG has more pixels than an RGB request holds"
+            ));
+        }
         let pitch = width * 3;
         pixels.resize(pitch * height, 0);
         self.decompressor
@@ -196,6 +205,33 @@ mod tests {
     fn the_shared_decoder_refuses_data_that_is_not_a_jpeg() {
         let decoder = SharedDecoder::new().unwrap();
         assert!(decoder.decode(b"not a jpeg").is_err());
+    }
+
+    #[test]
+    fn refuses_a_jpeg_of_more_pixels_than_an_rgb_request_holds() {
+        let (width, height) = (8192, 2736);
+        assert!(width * height * 3 > crate::MAX_REQUEST_BYTES);
+        let jpeg = compressed(width, height, PixelFormat::GRAY);
+        let mut pixels = Vec::new();
+        assert!(RgbDecoder::new()
+            .unwrap()
+            .decode(&jpeg, &mut pixels)
+            .is_err());
+        assert!(pixels.is_empty());
+    }
+
+    #[test]
+    fn refuses_a_jpeg_whose_header_claims_65535_by_65535_pixels() {
+        let mut jpeg = compressed(16, 16, PixelFormat::GRAY);
+        let frame_header = jpeg.windows(2).position(|bytes| bytes == [0xFF, 0xC0]);
+        let height_at = frame_header.unwrap() + 5;
+        jpeg[height_at..height_at + 4].fill(0xFF);
+        let mut pixels = Vec::new();
+        assert!(RgbDecoder::new()
+            .unwrap()
+            .decode(&jpeg, &mut pixels)
+            .is_err());
+        assert!(pixels.is_empty());
     }
 
     #[test]

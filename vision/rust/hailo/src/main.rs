@@ -42,7 +42,7 @@ use std::process::exit;
 use framing::{log_record, LogLevel, Writer};
 
 /// The longest request taken: above any camera's whole RGB frame.
-#[cfg(feature = "device")]
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
 const MAX_REQUEST_BYTES: usize = 64 << 20;
 
 /// What a network makes of a request.
