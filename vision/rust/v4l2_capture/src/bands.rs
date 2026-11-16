@@ -5,7 +5,7 @@ use std::ops::Range;
 use std::panic;
 
 use crate::arguments::Output;
-use crate::bayer::{Along, CellRows, Image, Nv12Band, RawFrame};
+use crate::bayer::{Along, CellRowSamples, Image, Nv12Band, RawFrame};
 use crate::nv12::Nv12Layout;
 
 /// How a frame is converted: at which size, which way up, and what is
@@ -69,12 +69,12 @@ impl Sums {
         frame: &RawFrame,
         conversion: &Conversion,
         cells: Range<usize>,
-        rows: &mut CellRows,
+        rows: &mut CellRowSamples,
         mut cell_row: impl FnMut(usize, &[u16], &[u16], &mut Sums),
     ) -> Sums {
         let mut sums = Sums::default();
         if conversion.green_mean || conversion.channel_means {
-            frame.cell_rows(cells, conversion.row_step, rows, |row, top, bottom| {
+            frame.for_each_cell_row(cells, conversion.row_step, rows, |row, top, bottom| {
                 cell_row(row, top, bottom, &mut sums);
                 sums.cells += (frame.width / 2) as u64;
             });

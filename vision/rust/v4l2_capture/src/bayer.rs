@@ -161,7 +161,7 @@ pub fn grey_half(
 }
 
 /// The samples of a row of RGGB cells' two rows, kept from one frame to the next.
-pub(crate) type CellRows = [Vec<u16>; 2];
+pub(crate) type CellRowSamples = [Vec<u16>; 2];
 
 /// A raw RGGB frame: `height` rows starting every `row_stride` bytes, at
 /// least `layout.row_bytes(width)`; `width` and `height` are even.
@@ -182,11 +182,11 @@ impl RawFrame<'_> {
     /// Calls `cell_row` with the index of the top row of each row of RGGB
     /// cells in `cell_rows` whose index is a multiple of `step`, then its top
     /// row's samples and its bottom row's, unpacked into `rows`.
-    pub(crate) fn cell_rows(
+    pub(crate) fn for_each_cell_row(
         &self,
         cell_rows: Range<usize>,
         step: usize,
-        [top, bottom]: &mut CellRows,
+        [top, bottom]: &mut CellRowSamples,
         mut cell_row: impl FnMut(usize, &[u16], &[u16]),
     ) {
         let row_bytes = self.layout.row_bytes(self.width);
@@ -319,9 +319,9 @@ fn half_band(
     [red_q12, green_q12, blue_q12]: [u32; 3],
     cells: Range<usize>,
     mut image: Image,
-    rows: &mut CellRows,
+    rows: &mut CellRowSamples,
 ) {
-    frame.cell_rows(cells, 1, rows, |row, top, bottom| {
+    frame.for_each_cell_row(cells, 1, rows, |row, top, bottom| {
         image.write(row / 2, |out| {
             for ((top_pair, bottom_pair), pixel) in top
                 .chunks_exact(2)
@@ -437,7 +437,7 @@ impl<'a> Image<'a> {
 
 /// The rows `demosaic_full` works on, kept from one frame to the next.
 pub(crate) struct DemosaicRows<V> {
-    cells: CellRows,
+    cells: CellRowSamples,
     samples: Vec<u16>,
     developed: [Vec<V>; 3],
     interpolated: Vec<V>,
@@ -446,7 +446,7 @@ pub(crate) struct DemosaicRows<V> {
 impl<V> Default for DemosaicRows<V> {
     fn default() -> DemosaicRows<V> {
         DemosaicRows {
-            cells: CellRows::default(),
+            cells: CellRowSamples::default(),
             samples: Vec::new(),
             developed: std::array::from_fn(|_| Vec::new()),
             interpolated: Vec::new(),
@@ -618,7 +618,7 @@ fn measure(
     green_q12: u32,
     conversion: &Conversion,
     cells: Range<usize>,
-    rows: &mut CellRows,
+    rows: &mut CellRowSamples,
 ) -> Sums {
     let signal = |sample: u16| u64::from(sample.saturating_sub(tone.black_level));
     Sums::measured(frame, conversion, cells, rows, |_, top, bottom, sums| {

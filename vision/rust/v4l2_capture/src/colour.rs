@@ -10,7 +10,7 @@ use std::ops::Range;
 
 use crate::arguments::Output;
 use crate::bands::{self, Conversion, Images, Measures, Sums};
-use crate::bayer::{self, CellRows, DemosaicRows, Image, RawFrame};
+use crate::bayer::{self, CellRowSamples, DemosaicRows, Image, RawFrame};
 use crate::tuning::{LensShading, Tuning};
 use crate::white_balance::Gains;
 
@@ -98,7 +98,7 @@ pub struct Buffers {
 /// The rows a band of the colour path works on.
 #[derive(Default)]
 struct Band {
-    cells: CellRows,
+    cells: CellRowSamples,
     shading_gains: ShadingGains,
     row_gains: Vec<u32>,
     values: [Vec<u16>; 2],
@@ -230,7 +230,7 @@ fn half_band(
         cells,
     );
     let mut renderer = Renderer::new(colour, image, width, entries, denoise);
-    frame.cell_rows(rows, 1, raw_rows, |row, top, bottom| {
+    frame.for_each_cell_row(rows, 1, raw_rows, |row, top, bottom| {
         linear.row(row, top, row_gains, top_values);
         linear.row(row + 1, bottom, row_gains, bottom_values);
         for ((top_pair, bottom_pair), pixel) in top_values
