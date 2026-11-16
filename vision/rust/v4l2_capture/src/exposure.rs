@@ -108,6 +108,24 @@ pub fn capped_now(settings: &Settings, auto_exposure: &mut AutoExposure) -> Opti
     }
 }
 
+/// Auto exposure after a settings change, continuing from `running`. While
+/// it is off, `apply` gives the sensors the manual exposure, and it continues
+/// from what they hold; while it is on, `apply` brings the running exposure
+/// within caps the change lowered. `apply` returns the exposure the sensors took.
+pub fn retarget(
+    settings: &Settings,
+    frame_us: f64,
+    running: Exposure,
+    apply: impl Fn(Exposure) -> io::Result<Exposure>,
+) -> io::Result<AutoExposure> {
+    let resume_from = resume_point(settings, running, || apply(settings.manual_exposure()))?;
+    let mut auto_exposure = auto_exposure_from(settings, frame_us, resume_from);
+    if let Some(capped) = capped_now(settings, &mut auto_exposure) {
+        apply(capped)?;
+    }
+    Ok(auto_exposure)
+}
+
 /// Mean of every `stride`-th byte of `image`.
 pub fn mean(image: &[u8], stride: usize) -> f64 {
     let (sum, count) = image

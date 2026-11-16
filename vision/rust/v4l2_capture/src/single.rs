@@ -16,7 +16,7 @@ use crate::arguments::{Format, OutputSpec, SingleArguments};
 use crate::bayer::{RawFrame, Tone};
 use crate::cpus;
 use crate::encoder::{Encoder, H264Settings, M2mEncoder};
-use crate::exposure::{auto_exposure, auto_exposure_from, capped_now, resume_point, Exposure};
+use crate::exposure::{auto_exposure, retarget, Exposure};
 use crate::h264::{self, EncodedVideo};
 use crate::jpeg::{self, Encoded};
 use crate::plan::{Plan, Sent};
@@ -606,19 +606,13 @@ fn convert_frames(
                             gains = settings.gains();
                         }
                         let running = auto_exposure.exposure;
-                        let resume_from = resume_point(&settings.capture, running, || {
-                            let applied = set_exposure(settings.capture.manual_exposure())?;
-                            let record = exposure_record(applied, last_ns.unwrap_or(0));
-                            queue.send(Record::Other(record))?;
-                            Ok(applied)
-                        })?;
                         auto_exposure =
-                            auto_exposure_from(&settings.capture, frame_us, resume_from);
-                        if let Some(capped) = capped_now(&settings.capture, &mut auto_exposure) {
-                            let applied = set_exposure(capped)?;
-                            let record = exposure_record(applied, last_ns.unwrap_or(0));
-                            queue.send(Record::Other(record))?;
-                        }
+                            retarget(&settings.capture, frame_us, running, |exposure| {
+                                let applied = set_exposure(exposure)?;
+                                let record = exposure_record(applied, last_ns.unwrap_or(0));
+                                queue.send(Record::Other(record))?;
+                                Ok(applied)
+                            })?;
                         hold_focus(&settings);
                         log(LogLevel::Info, &format!("settings: {settings:?}"));
                     }

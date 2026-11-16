@@ -8,9 +8,7 @@ use framing::{metadata_record, pair_header, LogLevel, Writer};
 
 use crate::arguments;
 use crate::bayer::{self, Tone};
-use crate::exposure::{
-    self, auto_exposure, auto_exposure_from, capped_now, resume_point, Exposure,
-};
+use crate::exposure::{self, auto_exposure, retarget, Exposure};
 use crate::pairing::{Pairer, Side};
 use crate::phase_lock::PhaseLock;
 use crate::sensor::{FrameTiming, SensorModel};
@@ -126,16 +124,11 @@ pub fn run(
                     Ok(()) => {
                         tone = pair_tone(&settings, model);
                         let running = auto_exposure.exposure;
-                        let resume_from = resume_point(&settings, running, || {
-                            let applied = set_exposure(settings.manual_exposure())?;
+                        auto_exposure = retarget(&settings, frame_us, running, |exposure| {
+                            let applied = set_exposure(exposure)?;
                             report_exposure(applied, last_left_ns.unwrap_or(0))?;
                             Ok(applied)
                         })?;
-                        auto_exposure = auto_exposure_from(&settings, frame_us, resume_from);
-                        if let Some(capped) = capped_now(&settings, &mut auto_exposure) {
-                            let applied = set_exposure(capped)?;
-                            report_exposure(applied, last_left_ns.unwrap_or(0))?;
-                        }
                         set_focus(settings.focus);
                         log(LogLevel::Info, &format!("settings: {settings:?}"));
                     }
