@@ -1,11 +1,11 @@
 ---
 id: TASK-131
 title: Pin the Cantastic version that decodes checksum signals
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-13 14:00'
-updated_date: '2026-11-15 18:41'
+updated_date: '2026-11-17 18:17'
 labels:
   - simulator
   - libraries

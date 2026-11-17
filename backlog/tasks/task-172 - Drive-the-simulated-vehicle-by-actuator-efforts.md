@@ -1,9 +1,11 @@
 ---
 id: TASK-172
 title: Drive the simulated vehicle by actuator efforts
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-15 17:19'
+updated_date: '2026-11-17 18:17'
 labels:
   - simulator
 dependencies:
