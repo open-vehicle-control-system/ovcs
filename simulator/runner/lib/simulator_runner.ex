@@ -7,8 +7,8 @@ defmodule SimulatorRunner do
   `VEHICLE=<Vehicle> mix run --no-halt` in `simulator/runner` reads the
   vehicle's `simulator/0` (`t:OvcsVehicle.simulator/0`), opens its CAN
   topology on its host mapping, and runs its simulated components in
-  `SimulatorCore.Hardware` with no world: the motion is
-  `SimulatorCore.Vehicle`'s own.
+  `SimulatorCore.Hardware` with no world: `SimulatorCore.FlatGround`
+  moves the vehicle.
 
   Whatever starts the VMS after it polls `ready?/0` over Erlang RPC.
   """

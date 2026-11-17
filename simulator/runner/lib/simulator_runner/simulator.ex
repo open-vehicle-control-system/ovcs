@@ -30,7 +30,7 @@ defmodule SimulatorRunner.Simulator do
 
   @doc """
   `SimulatorCore.Hardware`'s options for `simulator`: its components on
-  its motion model, with no world, so the motion is the model's own.
+  its vehicle, with no world, so `SimulatorCore.FlatGround` moves it.
   """
   @spec hardware_options(OvcsVehicle.simulator()) :: keyword()
   def hardware_options(simulator),

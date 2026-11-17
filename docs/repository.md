@@ -37,7 +37,7 @@ ovcs/
 +-- controllers/              FRAMEWORK
 |   +-- generic_controller/     PlatformIO C++ project for Arduino R4 Minima
 +-- simulator/                FRAMEWORK · Simulated hardware a VMS drives over virtual CAN
-|   +-- core/                   Elixir library: simulated components and the motion model they act on
+|   +-- core/                   Elixir library: simulated components and the flat-ground world they act on
 |   +-- runner/                 Host BEAM running a vehicle's simulated hardware before its VMS starts, with no ROS
 +-- libraries/                FRAMEWORK · Shared Elixir libraries (in-tree and sideloaded)
 +-- cli/                      FRAMEWORK · Rust source for the `ovcs` CLI

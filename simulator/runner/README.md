@@ -1,8 +1,8 @@
 # SimulatorRunner
 
-Runs a vehicle's simulated hardware on its own BEAM, with no ROS: the simulated components of [SimulatorCore](../core/README.md), on virtual CAN, moving `SimulatorCore.Vehicle`'s own motion model. Start it before the VMS, so the VMS boots against hardware that already answers, as on the vehicle.
+Runs a vehicle's simulated hardware on its own BEAM, with no ROS: the simulated components of [SimulatorCore](../core/README.md), on virtual CAN, moving the vehicle on `SimulatorCore.FlatGround`. Start it before the VMS, so the VMS boots against hardware that already answers, as on the vehicle.
 
-The vehicle declares its simulated hardware in `simulator/0`, typed `OvcsVehicle.simulator/0`: the motion model's parameters, the simulated components, the CAN topology of the frames they read and emit, and the host CAN mapping. The OVCS Mini reference vehicle's is in `vehicles/ovcs_mini/lib/ovcs_mini.ex`, with its topology in `vehicles/ovcs_mini/priv/can/simulator.yml`.
+The vehicle declares its simulated hardware in `simulator/0`, typed `OvcsVehicle.simulator/0`: the vehicle's mass and dimensions, the simulated components, the CAN topology of the frames they read and emit, and the host CAN mapping. The OVCS Mini reference vehicle's is in `vehicles/ovcs_mini/lib/ovcs_mini.ex`, with its topology in `vehicles/ovcs_mini/priv/can/simulator.yml`.
 
 ## Run it
 

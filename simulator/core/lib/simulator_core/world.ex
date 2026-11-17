@@ -1,26 +1,32 @@
 defmodule SimulatorCore.World do
   @moduledoc """
-  What moves the simulated vehicle for `SimulatorCore.Hardware`: an
-  external simulator, such as Gazebo through the ROS bridge.
+  An external simulator that owns the vehicle's dynamics for
+  `SimulatorCore.Hardware`, such as Gazebo through the ROS bridge.
 
-  The loop hands the world the vehicle's motion every tick, and learns
-  from the world's messages how far the wheels turned, as the vehicle's
-  motor and shaft sensors measure them. Every callback runs in the
-  loop's process, so `init/1` subscribes that process to what the world
-  reports.
+  The loop hands the world the tick's efforts (`SimulatorCore.Efforts`):
+  the world's own model moves the vehicle, with its slip, contacts and
+  terrain, and reports its state (`SimulatorCore.WorldState`) in
+  messages, which the simulated sensors measure. Exactly one model moves
+  the vehicle; without a world, `SimulatorCore.FlatGround` is that
+  model. Every callback runs in the loop's process, so `init/1`
+  subscribes that process to what the world reports.
   """
 
-  alias SimulatorCore.Vehicle
+  alias SimulatorCore.{Efforts, WorldState}
 
   @doc "Connects to the world: subscribes the calling process to what it reports."
   @callback init(opts :: keyword() | map()) :: state :: term()
 
   @doc """
-  How far the wheels have turned, in turns, cumulative, from a message
-  the world sent; nil when the message does not say.
+  Hands the world the tick's efforts, applied for `dt_s`, with the
+  world's state after it.
   """
-  @callback wheel_turns(message :: term(), state :: term()) :: float() | nil
+  @callback actuate(Efforts.t(), dt_s :: float(), state :: term()) :: state :: term()
 
-  @doc "Asks the world to move the vehicle as `vehicle` commands."
-  @callback drive(Vehicle.t(), state :: term()) :: :ok
+  @doc """
+  The world's state from a message it sent, with the world's state
+  after reading it; nil when the message is not the world's state.
+  """
+  @callback world_state(message :: term(), state :: term()) ::
+              {WorldState.t(), state :: term()} | nil
 end
