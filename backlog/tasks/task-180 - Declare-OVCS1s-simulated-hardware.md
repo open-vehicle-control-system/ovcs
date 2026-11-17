@@ -1,10 +1,11 @@
 ---
-id: TASK-141
+id: TASK-180
 title: Declare OVCS1's simulated hardware
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-13 23:19'
+updated_date: '2026-11-17 18:17'
 labels:
   - simulator
   - ovcs1
