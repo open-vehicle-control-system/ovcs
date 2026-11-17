@@ -68,19 +68,20 @@ defmodule RosBridge.ComponentsTest do
 
   describe "start/2 — :simulated_hardware" do
     test "runs the simulator's loop against Gazebo, which reads the wheel joints" do
-      vehicle = %{wheelbase_m: 0.3, wheel_radius_m: 0.05}
+      vehicle = %{wheelbase_m: 0.3, wheel_radius_m: 0.05, mass_kg: 2.41}
+      wheel_joints = %{rear_left: "rear_wheel"}
 
       assert [{SimulatorCore.Hardware, opts}] =
                Components.start(:simulated_hardware,
                  vehicle: vehicle,
                  simulated_components: [],
-                 wheel_joints: ["rear_wheel"]
+                 wheel_joints: wheel_joints
                )
 
       assert opts == %{
                vehicle: vehicle,
                simulated_components: [],
-               world: {RosBridge.Simulator.World, wheel_joints: ["rear_wheel"]}
+               world: {RosBridge.Simulator.World, wheel_joints: wheel_joints, vehicle: vehicle}
              }
     end
   end

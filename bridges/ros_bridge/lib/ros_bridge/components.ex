@@ -35,8 +35,8 @@ defmodule RosBridge.Components do
       `RosBridge.Simulator.World` as its world, emulating the vehicle's
       hardware on CAN so the VMS drives a simulated vehicle in Gazebo.
       **Simulation only.**
-      Opts: `:vehicle`, `:simulated_components` (required), and the
-      world's `:wheel_joints`; see the modules.
+      Opts: `:vehicle`, `:simulated_components` and the world's
+      `:wheel_joints` (required); see the modules.
     * `:imu_publisher` — starts the named driver (any
       `OvcsDrivers.Imu` implementation) followed by
       `RosBridge.Publishers.Imu`. Opts:
@@ -117,8 +117,8 @@ defmodule RosBridge.Components do
   def start(:simulator_clock, opts), do: [{RosBridge.Clock, opts}]
 
   def start(:simulated_hardware, opts) do
-    {wheel_joints, opts} = opts |> Map.new() |> Map.pop(:wheel_joints, [])
-    world = {RosBridge.Simulator.World, wheel_joints: wheel_joints}
+    {wheel_joints, opts} = opts |> Map.new() |> Map.pop!(:wheel_joints)
+    world = {RosBridge.Simulator.World, wheel_joints: wheel_joints, vehicle: opts.vehicle}
     [{SimulatorCore.Hardware, Map.put(opts, :world, world)}]
   end
 
