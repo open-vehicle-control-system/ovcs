@@ -66,15 +66,12 @@ config :shoehorn, init: [:nerves_runtime, :nerves_pack, :nerves_hub_link]
 # Advance the system clock on devices without real-time clocks.
 # `ctty: "ttyS0"` mirrors BEAM/IEx onto the UART so boot crashes are
 # visible on a serial console (kept on tty1 by default for HDMI users).
-# The pinned RPi4 system puts its F2FS application partition on p7.
-# Mount it at `/data` before BEAM starts; the system's erlinit default
-# uses `/root`. `build.sh` sets the firmware metadata's application
-# target to `/data` too, so Nerves Runtime uses the same mount point.
+# The system's erlinit mounts the application partition at `/root`, which
+# `/data` links to, and its firmware metadata points Nerves Runtime there.
 config :nerves, :erlinit,
   update_clock: true,
   hostname_pattern: vehicle_host,
-  ctty: "ttyS0",
-  mount: "/dev/mmcblk0p7:/data:f2fs:nodev:"
+  ctty: "ttyS0"
 
 config :nerves_ssh,
   authorized_keys: (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true),

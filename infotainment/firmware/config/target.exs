@@ -52,14 +52,11 @@ end
 config :logger, backends: [RingLogger]
 config :shoehorn, init: [:nerves_runtime, :nerves_pack]
 
-# See vms/firmware/config/target.exs for why the mount target is
-# overridden to `/data` (the OVCS Nerves system's own erlinit.config
-# mounts at `/root`, but the codebase + upstream Nerves libraries
-# assume `/data`).
+# The system's erlinit mounts the application partition at `/root`, which
+# `/data` links to, and its firmware metadata points Nerves Runtime there.
 config :nerves, :erlinit,
   update_clock: true,
-  hostname_pattern: vehicle_host,
-  mount: "/dev/mmcblk0p3:/data:f2fs:nodev:"
+  hostname_pattern: vehicle_host
 
 config :nerves_ssh,
   authorized_keys: (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true),
