@@ -5,6 +5,7 @@ import OvcsHeader from './OvcsHeader.jsx'
 import OvcsStatus from './OvcsStatus.jsx'
 import OvcsThemeSwitch from './OvcsThemeSwitch.jsx'
 import { reloadPage } from './page.js'
+import { useOvcsMenu } from './menu.js'
 import { useOvcsProduct } from './product.js'
 import { FOCUS, classNames } from './styles.js'
 
@@ -23,14 +24,20 @@ export function firmwareFacts(firmware) {
   ].filter(([, value]) => value)
 }
 
-const SUMMARY = 'flex flex-wrap items-baseline gap-x-5 gap-y-1 text-xs'
+const SUMMARY = 'flex flex-wrap items-baseline gap-x-5 gap-y-1 text-xs max-lg:basis-full'
 const DETAILS = 'flex flex-col gap-1.5 text-xs'
 
-/** One fact: its label, then its value, whose figures keep their width as they change; `spread`, the two at the ends of its line. */
-function Fact({ label, title, className, spread = false, children }) {
+// A label a phone leaves out of the summary, which its value explains on its own; a screen reader still reads it.
+const PHONE_HIDDEN = 'max-lg:sr-only'
+
+/**
+ * One fact: its label, then its value, whose figures keep their width as they change; `spread`, the two at the ends of
+ * its line; `phoneLabel: false`, its label left out on a phone.
+ */
+function Fact({ label, title, className, spread = false, phoneLabel = true, children }) {
   return (
     <div className={classNames('flex items-baseline', spread ? 'justify-between gap-4' : 'gap-1.5')} title={title}>
-      <dt className="text-ovcs-muted">{label}</dt>
+      <dt className={classNames('text-ovcs-muted', !phoneLabel && PHONE_HIDDEN)}>{label}</dt>
       <dd className={classNames('flex items-baseline gap-1.5 font-medium tabular-nums text-ovcs-text', className)}>{children}</dd>
     </div>
   )
@@ -46,19 +53,20 @@ function useNow() {
   return now
 }
 
-/** The board's clock, ticking, with its synchronization. */
+/** The board's clock, ticking, with its synchronization: on a phone, a synchronized one by its dot alone. */
 function Clock({ board }) {
   const clock = boardClock(board, useNow())
+  const state = clock.tone === 'ok' ? <span className={PHONE_HIDDEN}>{clock.state}</span> : clock.state
 
   return (
-    <Fact label="Clock">
+    <Fact label="Clock" phoneLabel={false}>
       <span className="font-mono">{clock.time}</span>
-      {clock.state && <OvcsStatus tone={clock.tone}>{clock.state}</OvcsStatus>}
+      {clock.state && <OvcsStatus tone={clock.tone}>{state}</OvcsStatus>}
     </Fact>
   )
 }
 
-/** What the bar always shows: the vehicle, the board's CPU busy share, its memory in use and its clock. */
+/** What the bar always shows: the vehicle, the board's CPU busy share, its memory in use and its clock, on one line on a phone. */
 function Summary({ firmware, board }) {
   const load = boardLoad(board)
   const cpu = load?.cpu
@@ -66,7 +74,11 @@ function Summary({ firmware, board }) {
 
   return (
     <dl aria-label="Summary" className={SUMMARY}>
-      {firmware?.vehicle && <Fact label="Vehicle">{firmware.vehicle}</Fact>}
+      {firmware?.vehicle && (
+        <Fact label="Vehicle" phoneLabel={false}>
+          {firmware.vehicle}
+        </Fact>
+      )}
       {cpu && (
         <Fact label="CPU">
           <OvcsStatus tone={load.tone} className="min-w-[5ch]">
@@ -109,6 +121,32 @@ const INFO = (
     <path d="M12 11v6M12 7.2v.1" />
   </svg>
 )
+
+const MENU = (
+  <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <path d="M4 6h16M4 12h16M4 18h16" />
+  </svg>
+)
+
+/** The button that shows and hides the shell's `OvcsMenu`, before the title; none without a menu. */
+function MenuButton() {
+  const menu = useOvcsMenu()
+  if (!menu?.present) return null
+
+  return (
+    <button
+      ref={menu.buttonRef}
+      type="button"
+      aria-label="Menu"
+      aria-controls={menu.id}
+      aria-expanded={menu.expanded}
+      onClick={menu.toggle}
+      className={`-ml-2 flex size-11 items-center justify-center rounded text-ovcs-muted hover:text-ovcs-text lg:size-9 ${FOCUS}`}
+    >
+      {MENU}
+    </button>
+  )
+}
 
 /** A button that opens the details under the bar, at its end; Escape, a press outside or the focus leaving closes them. */
 function Details({ groups }) {
@@ -208,34 +246,67 @@ function usePageTitle(product, vehicle) {
   }, [product, vehicle])
 }
 
+// The bar's height, in the root's `--ovcs-top-bar-height`, for the bars that stick under it.
+const HEIGHT_PROPERTY = '--ovcs-top-bar-height'
+
+/** Keeps the root's `HEIGHT_PROPERTY` at the height of the element `ref` holds while it is mounted. */
+function usePublishedHeight(ref) {
+  useEffect(() => {
+    const bar = ref.current
+    if (!bar || typeof ResizeObserver === 'undefined') return undefined
+    const root = document.documentElement.style
+    const observer = new ResizeObserver(() => root.setProperty(HEIGHT_PROPERTY, `${bar.offsetHeight}px`))
+    observer.observe(bar)
+    return () => {
+      observer.disconnect()
+      root.removeProperty(HEIGHT_PROPERTY)
+    }
+  }, [ref])
+}
+
 /**
- * The page's sticky top bar, the same on every dashboard: "OVCS" and the `OvcsShell`'s product, then `children`, then
+ * The page's sticky top bar, the same on every dashboard: the Menu button of the shell's `OvcsMenu`, if it has one,
+ * "OVCS" and the `OvcsShell`'s product, then `children`, then
  * at its end the `firmware`'s vehicle, the `board`'s CPU, memory and clock, as `useOvcsBoard` reads them, a button that opens
  * the rest (the board's interfaces and load averages, the firmware's version and system, from `revision`, `target`,
- * `nervesSystem` and `nervesSystemVersion`) and the `OvcsThemeSwitch`, last; its content wraps on a narrow screen. It
- * titles the browser tab with "OVCS", the product and the vehicle, and offers to reload the page once the firmware's
- * `revision` changes under it.
+ * `nervesSystem` and `nervesSystemVersion`) and the `OvcsThemeSwitch`, last; on a narrow screen the button and the
+ * switch go beside the title and the rest wraps under them. It titles the browser tab with "OVCS", the product and the
+ * vehicle, offers to reload the page once the firmware's `revision` changes under it, and publishes its height as the
+ * root's `--ovcs-top-bar-height`. `ref` holds its element.
  */
-export default function OvcsTopBar({ firmware, board, className, children, ...props }) {
+export default function OvcsTopBar({ firmware, board, className, children, ref, ...props }) {
   const product = useOvcsProduct()
   usePageTitle(product, firmware?.vehicle)
   const groups = details(firmware, board)
   const firmwareChanged = useFirmwareChanged(firmware)
+  const barRef = useRef(null)
+  usePublishedHeight(barRef)
 
   return (
     <OvcsHeader
+      ref={(node) => {
+        barRef.current = node
+        if (typeof ref === 'function') return ref(node)
+        if (ref) ref.current = node
+        return undefined
+      }}
       className={classNames('flex min-h-14 shrink-0 flex-wrap items-center gap-x-8 gap-y-2 px-4 py-2 lg:px-6', className)}
       {...props}
     >
-      <h1 className="text-lg font-semibold text-ovcs-text">
-        OVCS <span className="font-normal text-ovcs-muted">{product}</span>
-      </h1>
+      <div data-title className="flex items-center gap-3 max-lg:order-first max-lg:mr-auto">
+        <MenuButton />
+        <h1 className="text-lg font-semibold text-ovcs-text">
+          OVCS <span className="font-normal text-ovcs-muted">{product}</span>
+        </h1>
+      </div>
       {firmwareChanged ? <ReloadPrompt /> : null}
       {children}
-      <div className="ml-auto flex flex-wrap items-center justify-end gap-5">
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-5 max-lg:contents">
         <Summary firmware={firmware} board={board} />
-        {groups.length > 0 && <Details groups={groups} />}
-        <OvcsThemeSwitch />
+        <div data-controls className="flex items-center gap-5 max-lg:-order-1">
+          {groups.length > 0 && <Details groups={groups} />}
+          <OvcsThemeSwitch />
+        </div>
       </div>
     </OvcsHeader>
   )
