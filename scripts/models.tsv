@@ -43,3 +43,9 @@ vehicles/ovcs1/priv/models/yolox_w8a8.dlc	7b72b64a3935432956c3d27e6d074c7c4f434e
 # quantised w8a8 for QNN by Qualcomm AI Hub. Its weights are trained on
 # Cityscapes, whose terms allow non-commercial use only.
 vehicles/ovcs1/priv/models/ffnet_122ns_lowres.dlc	96e5a015e792c04526cb77ea48d46cfd12b3da390df243725ac719660f270f7c	BSD-3-Clause code (Qualcomm FFNet); weights trained on Cityscapes, non-commercial use only	https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/ffnet_122ns_lowres/releases/v0.66.0/ffnet_122ns_lowres-qnn_dlc-w8a8.zip	ffnet_122ns_lowres-qnn_dlc-w8a8/ffnet_122ns_lowres.dlc
+
+# The Mini's scene segmentation: DDRNet-23-slim compiled for its 1152 x 576
+# band (vehicles/ovcs_mini/models/README.md), which Hailo's model zoo does
+# not publish at that size. It is hosted on this repository's release
+# models/ovcs-mini-ddrnet-23-slim-576x1152.
+vehicles/ovcs_mini/priv/models/ddrnet_23_slim_576x1152.hef	0e495373242f574025f1a17168c9a7f77581e635333313f6382a00dd08273bd2	MIT code (DDRNet); weights trained on Cityscapes, non-commercial use only	https://github.com/open-vehicle-control-system/ovcs/releases/download/models/ovcs-mini-ddrnet-23-slim-576x1152/ddrnet_23_slim_576x1152.hef

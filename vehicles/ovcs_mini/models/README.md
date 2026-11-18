@@ -7,7 +7,9 @@ for 1024 × 2048 only; enlarging the band to that input, and the tensors
 the larger compilation parks in the host's memory, cost the Pi 5 more
 memory bandwidth than the cameras and the depth leave it.
 
-The HEF is not committed and not yet fetchable: build it as below.
+The HEF is not committed: `mise run fetch-models` downloads it from the
+repository's release `models/ovcs-mini-ddrnet-23-slim-576x1152`. To build
+another, as for a new band or calibration frames, follow the steps below.
 
 ## Licence
 
