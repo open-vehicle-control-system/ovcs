@@ -27,6 +27,22 @@ describe('exporters store', () => {
     expect(useExporters.getState().exporters).toEqual([ros2])
   })
 
+  it("lists the unit's exporters by name", async () => {
+    const snapshot = { ...ros2, id: 'snapshot', name: 'Snapshot' }
+    const api = { ...ros2, id: 'api', name: 'API' }
+    const bag = { ...ros2, id: 'ros2_bag', name: 'ROS 2 · Bag' }
+    vi.mocked(unit.fetchExporters).mockResolvedValue([snapshot, ros2, api, bag])
+
+    await useExporters.getState().load()
+
+    expect(useExporters.getState().exporters.map((exporter) => exporter.name)).toEqual([
+      'API',
+      'ROS 2 · Bag',
+      'ROS 2 · Zenoh',
+      'Snapshot'
+    ])
+  })
+
   it('keeps the exporters it has when a load fails', async () => {
     useExporters.setState({ exporters: [ros2] })
     vi.mocked(unit.fetchExporters).mockRejectedValue(new Error('Cannot reach the vision unit'))

@@ -9,8 +9,9 @@ const MAX_RETRY_MS = 30000
 let loads = 0
 
 /**
- * The unit's exporters as the API lists them; their live statuses come with the unit status (`exporterStatus`). A
- * failed load keeps the exporters listed before and is tried again, the delay doubling up to a cap, until one succeeds.
+ * The unit's exporters in alphabetical order of their names; their live statuses come with the unit status
+ * (`exporterStatus`). A failed load keeps the exporters listed before and is tried again, the delay doubling up to a
+ * cap, until one succeeds.
  */
 export const useExporters = create((set, get) => ({
   exporters: [],
@@ -21,7 +22,7 @@ export const useExporters = create((set, get) => ({
     loads += 1
     const started = loads
     try {
-      const exporters = await fetchExporters()
+      const exporters = (await fetchExporters()).toSorted((a, b) => a.name.localeCompare(b.name))
       if (started === loads) set({ exporters, retryMs: FIRST_RETRY_MS, retryTimer: null })
     } catch {
       if (started !== loads) return
