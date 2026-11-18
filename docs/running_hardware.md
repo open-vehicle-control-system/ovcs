@@ -50,7 +50,7 @@ Every build, burn and upload goes through `./ovcs` (built by `mise run cli`, see
 1. **Configure the vehicle's secrets.** Copy `vehicles/<vehicle>/.env.exs.example` to `vehicles/<vehicle>/.env.exs`. The file is gitignored and shared by every firmware of the vehicle. Fill in:
 
    - `AUTHORIZED_SSH_KEYS`: your SSH public keys;
-   - `WIFI_NETWORKS`;
+   - `WIFI_NETWORKS`, and `WIFI_HOTSPOT_PSK` for a vision unit that hosts its own Wi-Fi ([Wi-Fi](./vision/README.md#wi-fi));
    - the Phoenix `SECRET_KEY_BASE` and `SIGNING_SALT`;
    - `ZENOH_ENDPOINT_IP`, for a vehicle with a ROS bridge or a vision unit.
 

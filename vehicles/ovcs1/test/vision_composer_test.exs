@@ -14,6 +14,10 @@ defmodule Ovcs1.VisionComposerTest do
     assert %VisionCore.Config{} = Ovcs1.Vision.Composer.config(:target)
   end
 
+  test "the unit hosts its own Wi-Fi, for a phone in a car under test" do
+    assert Ovcs1.Vision.Composer.config(:target).wifi == {:hotspot, ssid: "ovcs1-vision"}
+  end
+
   test "the stereo component matches the rig" do
     %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
     stereo = Keyword.fetch!(components, :stereo)

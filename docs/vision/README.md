@@ -128,6 +128,20 @@ A camera outside the stereo pair, and the pipelines on its image:
 - [Object detection](./detection.md): detection pipelines, the accelerator's load and the models you may ship.
 - [Road segmentation](./segmentation.md): road and off-road clouds from a camera of its own.
 
+## Wi-Fi
+
+A unit's `wlan0` follows the `wifi:` of its composer's `VisionCore.Config`, applied at every boot:
+
+| `wifi:` | `wlan0` |
+|---|---|
+| `:join`, the default | joins the networks of `WIFI_NETWORKS` in your vehicle's `.env.exs` |
+| `{:hotspot, ssid: "ovcs1-vision"}` | hosts that network, WPA2 with the passphrase of `WIFI_HOTSPOT_PSK` in `.env.exs`, at `192.168.4.1` |
+| `:off` | stays off, for a unit on the vehicle's Ethernet alone |
+
+On a hotspot, a phone joins the network and opens the dashboard at `https://192.168.4.1`. The phone may warn that the network has no internet: the unit hands out addresses but no route off it. A hotspot needs a passphrase of 8 characters or more; without one, `wlan0` stays off and the unit's log says why. A unit cannot host a network and join one at once: it has one radio.
+
+The OVCS1 reference vehicle hosts `ovcs1-vision`, for tests in a car without a site network.
+
 ## Build, burn, upload
 
 The role is addressed like the others:
