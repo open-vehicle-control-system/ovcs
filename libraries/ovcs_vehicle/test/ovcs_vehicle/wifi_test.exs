@@ -63,6 +63,30 @@ defmodule OvcsVehicle.WifiTest do
     end
   end
 
+  describe "a mode VintageNet would refuse" do
+    test "refuses a passphrase WPA2 rejects: over 63 characters, or not printable ASCII" do
+      assert {:error, _} =
+               Wifi.vintage_net_config({:hotspot, ssid: "x"},
+                 hotspot_psk: String.duplicate("a", 64)
+               )
+
+      assert {:error, _} =
+               Wifi.vintage_net_config({:hotspot, ssid: "x"}, hotspot_psk: "passé-partout")
+
+      assert {:ok, _} =
+               Wifi.vintage_net_config({:hotspot, ssid: "x"},
+                 hotspot_psk: String.duplicate("a", 63)
+               )
+    end
+
+    test "refuses a mode or a network it does not know, without raising" do
+      assert {:error, _} = Wifi.vintage_net_config(:hotspot, hotspot_psk: "12345678")
+      assert {:error, _} = Wifi.vintage_net_config({:hotspot, []}, hotspot_psk: "12345678")
+      assert {:error, _} = Wifi.vintage_net_config(:station, [])
+      assert {:error, _} = Wifi.vintage_net_config(:join, networks: [{"site"}])
+    end
+  end
+
   describe "configure/2" do
     test "applies the configuration to wlan0 without saving it" do
       assert Wifi.configure(:off, configure: recorder(self())) == :ok
@@ -79,6 +103,21 @@ defmodule OvcsVehicle.WifiTest do
       assert_received {"wlan0", @unconfigured, [persist: false]}
       assert log =~ "WIFI_HOTSPOT_PSK"
     end
+
+    test "logs a configuration VintageNet refuses" do
+      refuse = fn _ifname, _config, _options -> {:error, "SSID too long"} end
+
+      log =
+        capture_log(fn ->
+          assert Wifi.configure(:off, configure: refuse) == {:error, "SSID too long"}
+        end)
+
+      assert log =~ "SSID too long"
+    end
+  end
+
+  test "is not restarted once it has applied a mode" do
+    assert Wifi.child_spec(mode: :off).restart == :temporary
   end
 
   test "applies a mode once when started" do

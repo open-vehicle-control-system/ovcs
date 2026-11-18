@@ -29,15 +29,16 @@ Chosen: the `wifi:` field.
 | `{:hotspot, ssid: "..."}` | hosts that network, WPA2 with `WIFI_HOTSPOT_PSK`, at `192.168.4.1/24` on channel 6, handing out `.10` to `.50` |
 | `:off` | unconfigured |
 
-`OvcsVehicle.Wifi` maps a mode to the configuration and applies it once at start; the vision firmware starts it on target with its composer's mode, and `config/target.exs` no longer configures `wlan0`. A hotspot without a passphrase of at least 8 characters is not started: `wlan0` stays unconfigured and the unit logs why. OVCS1's composer hosts `ovcs1-vision`. The VENTUNO Q's QCA2066 (`ath11k_pci`) hosts such a network: a phone joined it and loaded the dashboard.
+`OvcsVehicle.Wifi` maps a mode to the configuration and applies it once; `OvcsVehicle.Application` starts it when the firmware sets `:ovcs_vehicle, :wifi_mode`, which the vision firmware's `config/runtime.exs` reads from its composer on a board. The mode then applies once VintageNet runs, whether or not `vision_core` starts, and `config/target.exs` no longer configures `wlan0`. The release refuses a hotspot without a passphrase WPA2 takes, 8 to 63 printable ASCII characters; on the unit, a mode it cannot apply, or one VintageNet refuses, leaves `wlan0` unconfigured and is logged. OVCS1's composer hosts `ovcs1-vision`. The VENTUNO Q's QCA2066 (`ath11k_pci`) hosts such a network: a phone joined it and loaded the dashboard.
 
 Out of scope: joining and hosting at once, switching modes on its own, internet through the hotspot, and the other firmwares.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The composer's `wifi:` sets `wlan0` to join the site networks, host a hotspot, or stay off
-- [ ] #2 Every boot applies the composer's mode, including after a firmware upload that changes it
-- [ ] #3 A hotspot without a passphrase of at least 8 characters leaves `wlan0` unconfigured and logs why
+- [x] #1 The composer's `wifi:` sets `wlan0` to join the site networks, host a hotspot, or stay off
+- [x] #2 Every boot applies the composer's mode, including after a firmware upload that changes it
+- [x] #3 The build refuses a hotspot without a passphrase WPA2 takes, and a mode the unit cannot apply leaves `wlan0` unconfigured and is logged
 - [ ] #4 On OVCS1's hotspot, a phone gets an address and opens the dashboard at `https://192.168.4.1`
+- [x] #5 The mode applies whether or not the vision pipeline starts
 <!-- AC:END -->

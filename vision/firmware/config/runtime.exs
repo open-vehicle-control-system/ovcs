@@ -16,6 +16,12 @@ case OvcsVehicle.Firmware.resolve_side(
     config :vision_core, :vehicle, vision
     config :ovcs_vehicle, :module, vehicle
 
+    # Applied by `OvcsVehicle.Application` once VintageNet runs, whether or
+    # not the vision apps start. A workstation keeps its own network.
+    if Nerves.Runtime.mix_target() != :host do
+      config :ovcs_vehicle, :wifi_mode, VisionFirmware.wifi_mode(vision)
+    end
+
     # Stable SSH host keys from the vehicle's priv (`./ovcs host-keys`).
     # Without them NervesSSH generates keys under /data on first boot.
     # `:nerves_ssh` is not a host dep.

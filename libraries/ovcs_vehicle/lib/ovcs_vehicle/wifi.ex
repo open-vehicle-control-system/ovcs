@@ -10,20 +10,22 @@ defmodule OvcsVehicle.Wifi do
       unconfigured when there are none.
     * `{:hotspot, ssid: ssid}` — hosts `ssid`, WPA2 with `:hotspot_psk`, at
       `192.168.4.1/24` on channel 6, handing out `192.168.4.10` to
-      `192.168.4.50`. Without a passphrase of at least 8 characters, WPA2's
-      shortest, `wlan0` stays unconfigured and the error is logged.
+      `192.168.4.50`. The passphrase is 8 to 63 printable ASCII characters,
+      as WPA2 takes it (`valid_passphrase?/1`).
     * `:off` — unconfigured.
+
+  A mode it cannot apply, or one VintageNet refuses, leaves `wlan0`
+  unconfigured and is logged; it never raises.
 
   Options: `:mode` (`:join`), `:networks`, `:hotspot_psk`, and
   `:configure`, for tests, a function of the interface, its configuration
   and VintageNet's options.
 
-  Wired in only on target, like `OvcsVehicle.ClockSync`:
-
-      {OvcsVehicle.Wifi, mode: {:hotspot, ssid: "ovcs1-vision"}, hotspot_psk: psk}
+  `OvcsVehicle.Application` starts it once VintageNet runs, when the
+  firmware sets `:ovcs_vehicle, :wifi_mode`.
   """
 
-  use Task, restart: :transient
+  use Task, restart: :temporary
 
   require Logger
 
@@ -34,7 +36,6 @@ defmodule OvcsVehicle.Wifi do
   @vintage_net_parts [:VintageNet]
 
   @unconfigured %{type: VintageNet.Technology.Null}
-  @min_psk_length 8
   # Channel 6, on 2.4 GHz, which every phone supports.
   @hotspot_frequency 2437
   @hotspot_address {192, 168, 4, 1}
@@ -46,8 +47,8 @@ defmodule OvcsVehicle.Wifi do
     do: Task.start_link(fn -> configure(Keyword.get(opts, :mode, :join), opts) end)
 
   @doc """
-  Applies `mode` to `wlan0` without saving it; a refused mode leaves
-  `wlan0` unconfigured and logs why.
+  Applies `mode` to `wlan0` without saving it; a mode it refuses leaves
+  `wlan0` unconfigured, and that or VintageNet's refusal is logged.
   """
   @spec configure(mode(), keyword()) :: :ok | {:error, String.t()}
   def configure(mode, opts \\ []) do
@@ -55,8 +56,7 @@ defmodule OvcsVehicle.Wifi do
 
     case vintage_net_config(mode, opts) do
       {:ok, config} ->
-        configure.(@ifname, config, persist: false)
-        :ok
+        configure.(@ifname, config, persist: false) |> logged()
 
       {:error, reason} = error ->
         Logger.error("#{__MODULE__}: #{reason}; #{@ifname} left unconfigured")
@@ -65,16 +65,32 @@ defmodule OvcsVehicle.Wifi do
     end
   end
 
+  @doc "Whether WPA2 takes `psk` as a passphrase: 8 to 63 printable ASCII characters."
+  @spec valid_passphrase?(term()) :: boolean()
+  def valid_passphrase?(psk), do: is_binary(psk) and psk =~ ~r/\A[\x20-\x7E]{8,63}\z/
+
+  defp logged({:error, reason} = error) do
+    Logger.error(
+      "#{__MODULE__}: VintageNet refused #{@ifname}'s configuration: #{inspect(reason)}"
+    )
+
+    error
+  end
+
+  defp logged(_ok), do: :ok
+
   @doc "VintageNet's configuration of `wlan0` for `mode`."
   @spec vintage_net_config(mode(), keyword()) :: {:ok, map()} | {:error, String.t()}
   def vintage_net_config(mode, opts)
 
   def vintage_net_config(:join, opts) do
-    case Keyword.get(opts, :networks, []) do
-      [] ->
+    networks = Keyword.get(opts, :networks, [])
+
+    cond do
+      networks == [] ->
         {:ok, @unconfigured}
 
-      networks ->
+      Enum.all?(networks, &match?({ssid, psk} when is_binary(ssid) and is_binary(psk), &1)) ->
         {:ok,
          %{
            type: VintageNetWiFi,
@@ -86,18 +102,32 @@ defmodule OvcsVehicle.Wifi do
            },
            ipv4: %{method: :dhcp}
          }}
+
+      true ->
+        {:error, "WIFI_NETWORKS holds an entry that is not an {ssid, psk} pair of strings"}
     end
   end
 
-  def vintage_net_config({:hotspot, hotspot}, opts) do
+  def vintage_net_config({:hotspot, hotspot}, opts) when is_list(hotspot) do
+    ssid = Keyword.get(hotspot, :ssid)
     psk = Keyword.get(opts, :hotspot_psk)
 
-    if is_binary(psk) and String.length(psk) >= @min_psk_length,
-      do: {:ok, hotspot(Keyword.fetch!(hotspot, :ssid), psk)},
-      else: {:error, "a hotspot needs WIFI_HOTSPOT_PSK, #{@min_psk_length} characters or more"}
+    cond do
+      not is_binary(ssid) ->
+        {:error, "a hotspot needs an ssid: {:hotspot, ssid: \"name\"}"}
+
+      not valid_passphrase?(psk) ->
+        {:error, "a hotspot needs WIFI_HOTSPOT_PSK, 8 to 63 printable ASCII characters"}
+
+      true ->
+        {:ok, hotspot(ssid, psk)}
+    end
   end
 
   def vintage_net_config(:off, _opts), do: {:ok, @unconfigured}
+
+  def vintage_net_config(mode, _opts),
+    do: {:error, "unknown Wi-Fi mode #{inspect(mode)}: :join, {:hotspot, ssid: \"name\"} or :off"}
 
   defp hotspot(ssid, psk) do
     %{

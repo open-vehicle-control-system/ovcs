@@ -174,6 +174,11 @@ defmodule VisionFirmware.MixProject do
       Mix.raise("#{vehicle_name}.vision/0 returns #{inspect(composer)}, which is not compiled.")
     end
 
+    with {:error, message} <-
+           VisionFirmware.check_wifi(composer, System.get_env("WIFI_HOTSPOT_PSK")) do
+      Mix.raise(message)
+    end
+
     required_files =
       if function_exported?(composer, :required_files, 0),
         do: composer.required_files(),

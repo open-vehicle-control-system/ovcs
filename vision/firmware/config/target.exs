@@ -115,8 +115,8 @@ config :nerves_time,
 # `WIFI_NETWORKS` is an Elixir list literal of `{ssid, psk}` tuples from
 # the vehicle's `.env.exs`. Deps are not compiled when Mix evaluates this
 # file, so it is parsed with `Code.eval_string/1`. `wlan0` follows the
-# composer's `wifi:` mode, which `VisionFirmware.Application` applies with
-# these networks and the hotspot's `WIFI_HOTSPOT_PSK`.
+# composer's `wifi:` mode, which `config/runtime.exs` hands to
+# `OvcsVehicle.Wifi` with these networks and the hotspot's `WIFI_HOTSPOT_PSK`.
 wifi_networks =
   case System.get_env("WIFI_NETWORKS") do
     blank when blank in [nil, ""] ->
@@ -127,7 +127,7 @@ wifi_networks =
       parsed
   end
 
-config :vision_firmware,
+config :ovcs_vehicle,
   wifi_networks: wifi_networks,
   wifi_hotspot_psk: System.get_env("WIFI_HOTSPOT_PSK")
 

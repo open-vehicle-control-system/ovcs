@@ -138,7 +138,7 @@ A unit's `wlan0` follows the `wifi:` of its composer's `VisionCore.Config`, appl
 | `{:hotspot, ssid: "ovcs1-vision"}` | hosts that network, WPA2 with the passphrase of `WIFI_HOTSPOT_PSK` in `.env.exs`, at `192.168.4.1` |
 | `:off` | stays off, for a unit on the vehicle's Ethernet alone |
 
-On a hotspot, a phone joins the network and opens the dashboard at `https://192.168.4.1`. The phone may warn that the network has no internet: the unit hands out addresses but no route off it. A hotspot needs a passphrase of 8 characters or more; without one, `wlan0` stays off and the unit's log says why. A unit cannot host a network and join one at once: it has one radio.
+On a hotspot, a phone joins the network and opens the dashboard at `https://192.168.4.1`. The phone may warn that the network has no internet: the unit hands out addresses but no route off it. A hotspot needs a passphrase of 8 to 63 printable ASCII characters: the build refuses a hotspot without one. The mode applies as soon as the network stack runs, whether or not the vision pipeline starts, so a unit whose pipeline fails stays reachable. A unit cannot host a network and join one at once: it has one radio.
 
 The OVCS1 reference vehicle hosts `ovcs1-vision`, for tests in a car without a site network.
 
