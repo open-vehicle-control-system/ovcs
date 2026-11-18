@@ -119,7 +119,9 @@ if Mix.target() != :host do
   vehicle_host =
     "#{vehicle_dir |> String.replace("_", "-")}-bridge-#{bridge_firmware_id |> String.replace("_", "-")}"
 
-  config :logger, backends: [RingLogger]
+  # RingLogger's buffer is the board's log: info messages, enough of them to keep a boot's.
+  config :logger, backends: [RingLogger], level: :info
+  config :logger, RingLogger, max_size: 8192
   config :shoehorn, init: [:nerves_runtime, :nerves_pack]
 
   config :nerves, :erlinit,

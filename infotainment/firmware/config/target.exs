@@ -49,7 +49,9 @@ if config_env() in [:dev, :test, :prod] do
   end
 end
 
-config :logger, backends: [RingLogger]
+# RingLogger's buffer is the board's log: info messages, enough of them to keep a boot's.
+config :logger, backends: [RingLogger], level: :info
+config :logger, RingLogger, max_size: 8192
 config :shoehorn, init: [:nerves_runtime, :nerves_pack]
 
 # See vms/firmware/config/target.exs for why the mount target is
