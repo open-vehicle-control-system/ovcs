@@ -5,7 +5,7 @@ import { exporterStatus, useExporters } from '../stores/exporters.js'
 import { useNavigation } from '../stores/navigation.js'
 import { useStatus } from '../stores/status.js'
 
-/** The unit's exporters as the API lists them, each with its status like a pipeline's box, opening its page. */
+/** The unit's exporters by name, each with its status like a pipeline's box, opening its page. */
 export default function Exporters() {
   const exporters = useExporters((state) => state.exporters)
   // Each one's level and detail, flat, so a status that changes none of them does not render the menu again.
