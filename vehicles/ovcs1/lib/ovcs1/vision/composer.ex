@@ -43,6 +43,10 @@ defmodule Ovcs1.Vision.Composer do
   `:half_jpeg` for replay, the depth, the center camera and its
   pipelines for review.
 
+  The unit hosts its own Wi-Fi, `ovcs1-vision`, with the passphrase of
+  `WIFI_HOTSPOT_PSK` in the vehicle's `.env.exs`: a phone on it opens the
+  dashboard at `https://192.168.4.1`, in a car without a site network.
+
   The GPU modules are compiled on a host into `priv/nx_iree_cache`, for
   the stages, their options and the matching size; rebuild it after
   changing any of them:
@@ -75,6 +79,7 @@ defmodule Ovcs1.Vision.Composer do
 
   def config(:target) do
     %VisionCore.Config{
+      wifi: {:hotspot, ssid: "ovcs1-vision"},
       ros2: [
         zenoh_endpoint_ip: Application.get_env(:vision_core, :zenoh_endpoint_ip, "127.0.0.1")
       ],

@@ -114,7 +114,9 @@ config :nerves_time,
 
 # `WIFI_NETWORKS` is an Elixir list literal of `{ssid, psk}` tuples from
 # the vehicle's `.env.exs`. Deps are not compiled when Mix evaluates this
-# file, so it is parsed with `Code.eval_string/1`.
+# file, so it is parsed with `Code.eval_string/1`. `wlan0` follows the
+# composer's `wifi:` mode, which `config/runtime.exs` hands to
+# `OvcsVehicle.Wifi` with these networks and the hotspot's `WIFI_HOTSPOT_PSK`.
 wifi_networks =
   case System.get_env("WIFI_NETWORKS") do
     blank when blank in [nil, ""] ->
@@ -122,40 +124,24 @@ wifi_networks =
 
     networks_literal ->
       {parsed, _} = Code.eval_string(networks_literal)
-
-      Enum.map(parsed, fn {ssid, psk} ->
-        %{key_mgmt: :wpa_psk, ssid: ssid, psk: psk}
-      end)
+      parsed
   end
 
-wlan0_config =
-  case wifi_networks do
-    [] ->
-      []
-
-    networks ->
-      [
-        {"wlan0",
-         %{
-           type: VintageNetWiFi,
-           vintage_net_wifi: %{networks: networks},
-           ipv4: %{method: :dhcp}
-         }}
-      ]
-  end
+config :ovcs_vehicle,
+  wifi_networks: wifi_networks,
+  wifi_hotspot_psk: System.get_env("WIFI_HOTSPOT_PSK")
 
 config :vintage_net,
   regulatory_domain: "00",
   additional_name_servers: [{127, 0, 0, 53}],
-  config:
-    [
-      {"usb0", %{type: VintageNetDirect}},
-      {"eth0",
-       %{
-         type: VintageNetEthernet,
-         ipv4: %{method: :dhcp}
-       }}
-    ] ++ wlan0_config
+  config: [
+    {"usb0", %{type: VintageNetDirect}},
+    {"eth0",
+     %{
+       type: VintageNetEthernet,
+       ipv4: %{method: :dhcp}
+     }}
+  ]
 
 # The DNS bridge answers `.local` queries for Erlang's resolver, which
 # has no mDNS support of its own. See the "DNS Bridge configuration"

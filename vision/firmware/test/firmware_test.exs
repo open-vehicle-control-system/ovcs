@@ -20,6 +20,43 @@ defmodule VisionFirmwareTest do
     end
   end
 
+  describe "Wi-Fi" do
+    defmodule Hotspot do
+      def config(:target), do: %VisionCore.Config{wifi: {:hotspot, ssid: "ovcs1-vision"}}
+    end
+
+    defmodule Broken do
+      def config(:target), do: raise("no camera")
+    end
+
+    test "hands the networks and the hotspot passphrase of .env.exs to OvcsVehicle.Wifi" do
+      # A vehicle without a `.env.exs`, whose values would override these.
+      config =
+        target_config(:arduino_ventuno_q, %{
+          "VEHICLE" => "WifiTestVehicle",
+          "WIFI_NETWORKS" => ~s([{"site", "pass"}]),
+          "WIFI_HOTSPOT_PSK" => "12345678"
+        })
+
+      refute List.keymember?(config[:vintage_net][:config], "wlan0", 0)
+      assert config[:ovcs_vehicle][:wifi_networks] == [{"site", "pass"}]
+      assert config[:ovcs_vehicle][:wifi_hotspot_psk] == "12345678"
+    end
+
+    test "reads the composer's mode, joining when the composer cannot say" do
+      assert VisionFirmware.wifi_mode(Hotspot) == {:hotspot, ssid: "ovcs1-vision"}
+      assert VisionFirmware.wifi_mode(Broken) == :join
+    end
+
+    test "refuses a hotspot build without a passphrase WPA2 takes" do
+      assert VisionFirmware.check_wifi(Hotspot, "12345678") == :ok
+      assert {:error, message} = VisionFirmware.check_wifi(Hotspot, nil)
+      assert message =~ "WIFI_HOTSPOT_PSK"
+      assert {:error, _} = VisionFirmware.check_wifi(Hotspot, "short")
+      assert VisionFirmware.check_wifi(Broken, nil) == :ok
+    end
+  end
+
   test "a board restarts its applications when one exits" do
     assert target_config(:rpi5)[:shoehorn][:handler] == VisionFirmware.ShoehornHandler
   end
@@ -52,8 +89,10 @@ defmodule VisionFirmwareTest do
     Keyword.get_values(erlinit, :env)
   end
 
-  defp target_config(target) do
-    env = %{"VEHICLE" => "Ovcs1", "CI" => "true", "SECRET_KEY_BASE" => "test"}
+  defp target_config(target, extra_env \\ %{}) do
+    env =
+      Map.merge(%{"VEHICLE" => "Ovcs1", "CI" => "true", "SECRET_KEY_BASE" => "test"}, extra_env)
+
     saved = Map.new(env, fn {name, _value} -> {name, System.get_env(name)} end)
     System.put_env(env)
 
