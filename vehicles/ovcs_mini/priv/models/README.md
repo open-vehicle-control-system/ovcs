@@ -1,9 +1,9 @@
 # models
 
-Compiled Hailo models (`.hef`) for the detector of the Mini's vision unit,
-`OvcsMini.Vision.Composer`, which loads `nanodet_repvgg.hef`. Its
-segmentation model, `ddrnet_23_slim_576x1152.hef`, is compiled for the
-Mini's band rather than fetched: `../../models/README.md`.
+Compiled Hailo models (`.hef`) for the Mini's vision unit,
+`OvcsMini.Vision.Composer`: the detector, `nanodet_repvgg.hef`, and the
+segmentation model, `ddrnet_23_slim_576x1152.hef`, compiled for the Mini's
+band (`../../models/README.md`).
 
 **Nothing in this directory is committed.** Run
 
