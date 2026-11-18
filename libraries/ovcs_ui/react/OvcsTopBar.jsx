@@ -27,11 +27,17 @@ export function firmwareFacts(firmware) {
 const SUMMARY = 'flex flex-wrap items-baseline gap-x-5 gap-y-1 text-xs max-lg:basis-full'
 const DETAILS = 'flex flex-col gap-1.5 text-xs'
 
-/** One fact: its label, then its value, whose figures keep their width as they change; `spread`, the two at the ends of its line. */
-function Fact({ label, title, className, spread = false, children }) {
+// A label a phone leaves out of the summary, which its value explains on its own; a screen reader still reads it.
+const PHONE_HIDDEN = 'max-lg:sr-only'
+
+/**
+ * One fact: its label, then its value, whose figures keep their width as they change; `spread`, the two at the ends of
+ * its line; `phoneLabel: false`, its label left out on a phone.
+ */
+function Fact({ label, title, className, spread = false, phoneLabel = true, children }) {
   return (
     <div className={classNames('flex items-baseline', spread ? 'justify-between gap-4' : 'gap-1.5')} title={title}>
-      <dt className="text-ovcs-muted">{label}</dt>
+      <dt className={classNames('text-ovcs-muted', !phoneLabel && PHONE_HIDDEN)}>{label}</dt>
       <dd className={classNames('flex items-baseline gap-1.5 font-medium tabular-nums text-ovcs-text', className)}>{children}</dd>
     </div>
   )
@@ -47,19 +53,20 @@ function useNow() {
   return now
 }
 
-/** The board's clock, ticking, with its synchronization. */
+/** The board's clock, ticking, with its synchronization: on a phone, a synchronized one by its dot alone. */
 function Clock({ board }) {
   const clock = boardClock(board, useNow())
+  const state = clock.tone === 'ok' ? <span className={PHONE_HIDDEN}>{clock.state}</span> : clock.state
 
   return (
-    <Fact label="Clock">
+    <Fact label="Clock" phoneLabel={false}>
       <span className="font-mono">{clock.time}</span>
-      {clock.state && <OvcsStatus tone={clock.tone}>{clock.state}</OvcsStatus>}
+      {clock.state && <OvcsStatus tone={clock.tone}>{state}</OvcsStatus>}
     </Fact>
   )
 }
 
-/** What the bar always shows: the vehicle, the board's CPU busy share, its memory in use and its clock. */
+/** What the bar always shows: the vehicle, the board's CPU busy share, its memory in use and its clock, on one line on a phone. */
 function Summary({ firmware, board }) {
   const load = boardLoad(board)
   const cpu = load?.cpu
@@ -67,7 +74,11 @@ function Summary({ firmware, board }) {
 
   return (
     <dl aria-label="Summary" className={SUMMARY}>
-      {firmware?.vehicle && <Fact label="Vehicle">{firmware.vehicle}</Fact>}
+      {firmware?.vehicle && (
+        <Fact label="Vehicle" phoneLabel={false}>
+          {firmware.vehicle}
+        </Fact>
+      )}
       {cpu && (
         <Fact label="CPU">
           <OvcsStatus tone={load.tone} className="min-w-[5ch]">

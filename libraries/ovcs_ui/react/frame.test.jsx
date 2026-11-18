@@ -328,6 +328,28 @@ describe('OvcsTopBar with a board', () => {
     expect(screen.queryByText('192.168.10.232')).toBeNull()
   })
 
+  test('keeps its summary to one line on a phone: no vehicle or clock label, a synchronized clock as its dot alone', () => {
+    const synchronized = { ...board, offsetMs: 0, clockSynchronized: true }
+    const { rerender } = render(
+      <OvcsShell product="Vision">
+        <OvcsTopBar board={synchronized} firmware={{ revision: 'ce99e251', vehicle: 'OVCS1' }} />
+      </OvcsShell>
+    )
+    const summary = screen.getByLabelText('Summary')
+    const phoneOnly = (element) => element.className.split(' ').includes('max-lg:sr-only')
+    const labels = Object.fromEntries([...summary.querySelectorAll('dt')].map((label) => [label.textContent, phoneOnly(label)]))
+
+    expect(labels).toEqual({ Vehicle: true, CPU: false, Memory: false, Clock: true })
+    expect(phoneOnly(within(summary).getByText('synchronized'))).toBe(true)
+
+    rerender(
+      <OvcsShell product="Vision">
+        <OvcsTopBar board={board} firmware={{ revision: 'ce99e251', vehicle: 'OVCS1' }} />
+      </OvcsShell>
+    )
+    expect(phoneOnly(within(summary).getByText('not synchronized'))).toBe(false)
+  })
+
   test("lists the board's interfaces and its load averages in the details, over the firmware", () => {
     render(
       <OvcsShell product="VMS">
@@ -469,6 +491,21 @@ describe('OvcsBottomBar', () => {
     expect(within(footer).getByRole('list', { name: 'Status' }).children).toHaveLength(1)
   })
 
+  test('lines its statuses up in two columns on a phone, each label over its value', () => {
+    render(
+      <OvcsBottomBar>
+        <OvcsBottomBarItem label="NPU">
+          <span>Hexagon 23 %</span>
+        </OvcsBottomBarItem>
+      </OvcsBottomBar>
+    )
+    const classes = (element) => element.className.split(' ')
+    const item = screen.getByRole('listitem')
+
+    expect(classes(screen.getByRole('list', { name: 'Status' }))).toEqual(expect.arrayContaining(['max-lg:grid', 'max-lg:grid-cols-2']))
+    expect(classes(item)).toEqual(expect.arrayContaining(['max-lg:flex-col', 'max-lg:items-start', 'whitespace-nowrap']))
+    expect(classes(within(item).getByText('NPU'))).toContain('max-lg:text-xs')
+  })
 })
 
 describe('the connection', () => {
