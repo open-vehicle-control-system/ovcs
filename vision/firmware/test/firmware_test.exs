@@ -20,6 +20,37 @@ defmodule VisionFirmwareTest do
     end
   end
 
+  describe "Wi-Fi" do
+    test "leaves wlan0 to the composer's mode, with the networks and the hotspot passphrase of .env.exs" do
+      # A vehicle without a `.env.exs`, whose values would override these.
+      config =
+        target_config(:arduino_ventuno_q, %{
+          "VEHICLE" => "WifiTestVehicle",
+          "WIFI_NETWORKS" => ~s([{"site", "pass"}]),
+          "WIFI_HOTSPOT_PSK" => "12345678"
+        })
+
+      refute List.keymember?(config[:vintage_net][:config], "wlan0", 0)
+      assert config[:vision_firmware][:wifi_networks] == [{"site", "pass"}]
+      assert config[:vision_firmware][:wifi_hotspot_psk] == "12345678"
+    end
+
+    test "applies the composer's mode, joining by default" do
+      Application.put_env(:vision_firmware, :wifi_networks, [{"site", "pass"}])
+      Application.put_env(:vision_firmware, :wifi_hotspot_psk, "12345678")
+
+      on_exit(fn ->
+        Application.delete_env(:vision_firmware, :wifi_networks)
+        Application.delete_env(:vision_firmware, :wifi_hotspot_psk)
+      end)
+
+      assert VisionFirmware.Application.wifi_options(nil) ==
+               [mode: :join, networks: [{"site", "pass"}], hotspot_psk: "12345678"]
+
+      assert VisionFirmware.Application.wifi_options(%VisionCore.Config{wifi: :off})[:mode] == :off
+    end
+  end
+
   test "a board restarts its applications when one exits" do
     assert target_config(:rpi5)[:shoehorn][:handler] == VisionFirmware.ShoehornHandler
   end
@@ -52,8 +83,8 @@ defmodule VisionFirmwareTest do
     Keyword.get_values(erlinit, :env)
   end
 
-  defp target_config(target) do
-    env = %{"VEHICLE" => "Ovcs1", "CI" => "true", "SECRET_KEY_BASE" => "test"}
+  defp target_config(target, extra_env \\ %{}) do
+    env = Map.merge(%{"VEHICLE" => "Ovcs1", "CI" => "true", "SECRET_KEY_BASE" => "test"}, extra_env)
     saved = Map.new(env, fn {name, _value} -> {name, System.get_env(name)} end)
     System.put_env(env)
 

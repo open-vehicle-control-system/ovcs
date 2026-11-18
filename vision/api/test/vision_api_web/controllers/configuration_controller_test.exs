@@ -47,7 +47,8 @@ defmodule VisionApiWeb.ConfigurationControllerTest do
                        }
                      ],
                      "preview" => [],
-                     "jpeg" => []
+                     "jpeg" => [],
+                     "wifi" => "join"
                    }
                  }
                }

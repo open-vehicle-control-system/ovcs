@@ -35,8 +35,13 @@ defmodule VisionCore.Config do
         * `:ports` (`3`) — the most Ports encoding at once, a positive
           integer. Each runs one encode at a time, so it bounds the
           encodes, their memory and the CPU cores they take.
+    * `:wifi` (`:join`) — the unit's Wi-Fi on a board, which the vision
+      firmware applies at boot through `OvcsVehicle.Wifi`: `:join`, the
+      vehicle's `WIFI_NETWORKS`; `{:hotspot, ssid: ssid}`, a network of
+      its own at `192.168.4.1` with the passphrase `WIFI_HOTSPOT_PSK`;
+      `:off`, for a unit on the vehicle's Ethernet alone.
   """
-  defstruct ros2: nil, components: [], exporters: [], preview: [], jpeg: []
+  defstruct ros2: nil, components: [], exporters: [], preview: [], jpeg: [], wifi: :join
 
   @type component :: atom() | {atom(), keyword()}
   @type t :: %__MODULE__{
@@ -44,7 +49,8 @@ defmodule VisionCore.Config do
           components: [component()],
           exporters: [{module(), keyword()} | module()],
           preview: keyword(),
-          jpeg: keyword()
+          jpeg: keyword(),
+          wifi: :join | {:hotspot, [ssid: String.t()]} | :off
         }
 end
 
