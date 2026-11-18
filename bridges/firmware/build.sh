@@ -20,10 +20,7 @@ cd "$(dirname "$0")"
 if [ "$MIX_TARGET" != "host" ]; then
   : "${BRIDGE_FIRMWARE_ID:?BRIDGE_FIRMWARE_ID env var is required (a key of bridge_firmwares/0 in the vehicle package)}"
 fi
-# See vms/firmware/build.sh for why we override the application
-# partition target to /data.
-: "${NERVES_FW_APPLICATION_PART0_TARGET:=/data}"
-export VEHICLE BRIDGE_FIRMWARE_ID MIX_TARGET NERVES_FW_APPLICATION_PART0_TARGET
+export VEHICLE BRIDGE_FIRMWARE_ID MIX_TARGET
 
 step() { printf "\n\033[1;36m==> %s\033[0m\n" "$*"; }
 

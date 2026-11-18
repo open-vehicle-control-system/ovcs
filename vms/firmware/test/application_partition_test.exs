@@ -3,7 +3,9 @@ defmodule VmsFirmware.ApplicationPartitionTest do
 
   import ExUnit.CaptureIO
 
-  test "early boot mounts the pinned RPi4 system's application partition at /data" do
+  # The pinned system's erlinit mounts the application partition at `/root`, which `/data`
+  # links to: Nerves Runtime finds it mounted only under that path, and formats it otherwise.
+  test "leaves the application partition where the pinned system mounts it" do
     overrides = %{
       "VEHICLE" => "VmsMountContractTest",
       "CI" => "true",
@@ -22,15 +24,15 @@ defmodule VmsFirmware.ApplicationPartitionTest do
             target: :ovcs_base_can_system_rpi4
           )
 
-        mount =
-          config |> Keyword.fetch!(:nerves) |> Keyword.fetch!(:erlinit) |> Keyword.fetch!(:mount)
-
-        # The pinned system's fwup-common.conf declares application data on p7.
-        # p3 is BOOT-B, not an F2FS application partition.
-        assert mount == "/dev/mmcblk0p7:/data:f2fs:nodev:"
+        refute config
+               |> Keyword.fetch!(:nerves)
+               |> Keyword.fetch!(:erlinit)
+               |> Keyword.has_key?(:mount)
       end)
     after
       System.put_env(previous)
     end
+
+    refute File.read!(Path.expand("../build.sh", __DIR__)) =~ "NERVES_FW_APPLICATION_PART0_TARGET"
   end
 end

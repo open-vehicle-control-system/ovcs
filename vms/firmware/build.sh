@@ -20,13 +20,7 @@ cd "$(dirname "$0")"
 
 : "${MIX_TARGET:=ovcs_base_can_system_rpi4}"
 : "${VEHICLE:?VEHICLE env var is required (e.g. Ovcs1)}"
-# Override the u-boot env target so `nerves_runtime`'s first-boot
-# format-and-mount lands the application partition at `/data` (the
-# upstream Nerves convention), matching the erlinit `mount:` override
-# in `config/target.exs`. The OVCS Nerves system's own erlinit.config
-# uses `/root`; this realigns both sides so they agree.
-: "${NERVES_FW_APPLICATION_PART0_TARGET:=/data}"
-export MIX_TARGET VEHICLE NERVES_FW_APPLICATION_PART0_TARGET
+export MIX_TARGET VEHICLE
 
 step() { printf "\n\033[1;36m==> %s\033[0m\n" "$*"; }
 

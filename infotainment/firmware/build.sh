@@ -21,10 +21,7 @@ cd "$(dirname "$0")"
 
 : "${MIX_TARGET:=ovcs_base_can_system_rpi5}"
 : "${VEHICLE:?VEHICLE env var is required (e.g. Ovcs1)}"
-# See vms/firmware/build.sh for why we override the application
-# partition target to /data.
-: "${NERVES_FW_APPLICATION_PART0_TARGET:=/data}"
-export MIX_TARGET VEHICLE NERVES_FW_APPLICATION_PART0_TARGET
+export MIX_TARGET VEHICLE
 
 step() { printf "\n\033[1;36m==> %s\033[0m\n" "$*"; }
 

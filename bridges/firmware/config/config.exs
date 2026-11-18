@@ -126,13 +126,6 @@ if Mix.target() != :host do
     update_clock: true,
     hostname_pattern: vehicle_host
 
-  # The base CAN systems mount the application partition at `/root`; the
-  # codebase and upstream Nerves libraries expect `/data` (see
-  # vms/firmware/config/target.exs). The Raspberry Pi 5 system links
-  # `/data` to it itself.
-  if Mix.target() != :rpi5,
-    do: config(:nerves, :erlinit, mount: "/dev/mmcblk0p3:/data:f2fs:nodev:")
-
   config :nerves_ssh,
     authorized_keys:
       (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true),
