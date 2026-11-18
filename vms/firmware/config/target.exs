@@ -53,7 +53,9 @@ end
 # See https://hexdocs.pm/ring_logger/readme.html for more information on
 # configuring ring_logger.
 
-config :logger, backends: [RingLogger]
+# RingLogger's buffer is the board's log: info messages, enough of them to keep a boot's.
+config :logger, backends: [RingLogger], level: :info
+config :logger, RingLogger, max_size: 8192
 
 # Use shoehorn to start the main application. See the shoehorn
 # library documentation for more control in ordering how OTP
