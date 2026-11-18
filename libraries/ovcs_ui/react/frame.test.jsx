@@ -1,5 +1,5 @@
 import { act, fireEvent, render, renderHook, screen, within } from '@testing-library/react'
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import { reloadPage } from './page.js'
 
@@ -69,6 +69,51 @@ describe('OvcsTopBar', () => {
     expect(banner.textContent).not.toContain('ce99e251')
     expect(details().getAttribute('aria-expanded')).toBe('false')
     expect(within(banner).getByRole('switch', { name: 'Dark mode' })).toBeTruthy()
+  })
+
+  test('publishes its height for the bars that stick under it, and takes it back when unmounted', () => {
+    const observers = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback) {
+          this.callback = callback
+          observers.push(this)
+        }
+        observe() {}
+        disconnect() {}
+      }
+    )
+    const { unmount } = render(
+      <OvcsShell product="Vision">
+        <OvcsTopBar firmware={board} />
+      </OvcsShell>
+    )
+    const root = document.documentElement.style
+    Object.defineProperty(screen.getByRole('banner'), 'offsetHeight', { value: 81 })
+
+    act(() => observers.forEach((observer) => observer.callback()))
+    expect(root.getPropertyValue('--ovcs-top-bar-height')).toBe('81px')
+
+    unmount()
+    expect(root.getPropertyValue('--ovcs-top-bar-height')).toBe('')
+    vi.unstubAllGlobals()
+  })
+
+  test('puts the details button and the theme switch beside the title below the laptop breakpoint, the summary under them', () => {
+    render(
+      <OvcsShell product="Vision">
+        <OvcsTopBar firmware={board} />
+      </OvcsShell>
+    )
+    const classes = (element) => element.className.split(' ')
+    const buttons = details().closest('[data-controls]')
+
+    expect(classes(screen.getByRole('heading', { level: 1 }).closest('[data-title]'))).toEqual(expect.arrayContaining(['max-lg:order-first', 'max-lg:mr-auto']))
+    expect(classes(buttons)).toContain('max-lg:-order-1')
+    expect(buttons.contains(screen.getByRole('switch', { name: 'Dark mode' }))).toBe(true)
+    expect(classes(buttons.parentElement)).toContain('max-lg:contents')
+    expect(classes(screen.getByLabelText('Summary'))).toContain('max-lg:basis-full')
   })
 
   test('opens the firmware version and system from the details button, and closes them on Escape or a click outside', () => {
@@ -423,6 +468,7 @@ describe('OvcsBottomBar', () => {
     expect(footer.textContent).toBe('Vision unitConnected')
     expect(within(footer).getByRole('list', { name: 'Status' }).children).toHaveLength(1)
   })
+
 })
 
 describe('the connection', () => {
@@ -510,6 +556,132 @@ describe('OvcsMenu', () => {
     expect(ros.className).toContain('hover:bg-ovcs-bg')
     fireEvent.click(ros)
     expect(onClick).toHaveBeenCalled()
+  })
+
+  // A screen at least as wide as a laptop's, or narrower.
+  const screenWidth = (laptop) =>
+    vi.stubGlobal('matchMedia', () => ({ matches: laptop, addEventListener() {}, removeEventListener() {} }))
+
+  const shell = ({ laptop, onClick = vi.fn(), selected = false }) => {
+    screenWidth(laptop)
+    return render(
+      <OvcsShell product="Vision">
+        <OvcsTopBar />
+        <OvcsShellBody>
+          <OvcsMenu label="Vision unit">
+            <OvcsMenuSection title="Main">
+              <OvcsMenuList label="Main">
+                <li>
+                  <OvcsMenuItem selected={selected} onClick={onClick}>
+                    Overview
+                  </OvcsMenuItem>
+                </li>
+              </OvcsMenuList>
+            </OvcsMenuSection>
+          </OvcsMenu>
+          <OvcsMain>content</OvcsMain>
+        </OvcsShellBody>
+      </OvcsShell>
+    )
+  }
+  const menuButton = () => screen.getByRole('button', { name: 'Menu' })
+  const navigation = () => screen.getByRole('navigation', { name: 'Vision unit' })
+  const navClasses = () => navigation().className.split(' ')
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    window.localStorage.clear()
+  })
+
+  test("hides its entries on a phone until the top bar's Menu button opens them", () => {
+    shell({ laptop: false })
+
+    expect(menuButton().getAttribute('aria-controls')).toBe(navigation().id)
+    expect(menuButton().getAttribute('aria-expanded')).toBe('false')
+    expect(navClasses()).toContain('max-lg:hidden')
+
+    fireEvent.click(menuButton())
+
+    expect(menuButton().getAttribute('aria-expanded')).toBe('true')
+    expect(navClasses()).toContain('max-lg:flex')
+    expect(navClasses()).not.toContain('max-lg:hidden')
+  })
+
+  test('closes on a phone once an entry is chosen', () => {
+    const onClick = vi.fn()
+    shell({ laptop: false, onClick })
+    fireEvent.click(menuButton())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Overview' }))
+
+    expect(onClick).toHaveBeenCalled()
+    expect(menuButton().getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('closes on a phone on Escape, back on the Menu button', () => {
+    shell({ laptop: false })
+    fireEvent.click(menuButton())
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Overview' }), { key: 'Escape' })
+
+    expect(menuButton().getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(menuButton())
+  })
+
+  test('shows the current entry when it opens on a phone', () => {
+    shell({ laptop: false, selected: true })
+    const current = screen.getByRole('button', { name: 'Overview' })
+    current.scrollIntoView = vi.fn()
+
+    fireEvent.click(menuButton())
+
+    expect(current.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+  })
+
+  test("stays under the top bar on a phone, over the page's sticky bars", () => {
+    shell({ laptop: false })
+
+    expect(navClasses()).toEqual(
+      expect.arrayContaining(['max-lg:sticky', 'max-lg:top-[var(--ovcs-top-bar-height,0px)]', 'z-20'])
+    )
+  })
+
+  test('shows its entries beside the page on a laptop until the Menu button hides them, which the browser remembers', () => {
+    const { unmount } = shell({ laptop: true })
+
+    expect(menuButton().getAttribute('aria-expanded')).toBe('true')
+    expect(navClasses()).toContain('lg:flex')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Overview' }))
+    expect(menuButton().getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.click(menuButton())
+    expect(menuButton().getAttribute('aria-expanded')).toBe('false')
+    expect(navClasses()).toContain('lg:hidden')
+
+    unmount()
+    shell({ laptop: true })
+    expect(menuButton().getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('shows its entries outside a shell, and a top bar without a menu has no Menu button', () => {
+    render(
+      <OvcsShell product="VMS">
+        <OvcsTopBar />
+      </OvcsShell>
+    )
+    expect(screen.queryByRole('button', { name: 'Menu' })).toBeNull()
+
+    render(<OvcsMenu label="Bus" />)
+    expect(screen.getByRole('navigation', { name: 'Bus' }).className.split(' ')).toContain('flex')
+  })
+
+  test('gives its items the height of a finger below the laptop breakpoint', () => {
+    shell({ laptop: false })
+
+    expect(screen.getByRole('button', { name: 'Overview' }).className.split(' ')).toEqual(
+      expect.arrayContaining(['min-h-11', 'lg:min-h-9'])
+    )
   })
 
   test('lets an item name another kind of current entry', () => {

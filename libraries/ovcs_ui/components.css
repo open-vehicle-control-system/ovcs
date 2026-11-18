@@ -13,11 +13,11 @@ a.ovcs-card:hover {
   border-color: var(--ovcs-accent);
 }
 
-/* The page's sticky top bar. */
+/* The page's sticky top bar, over the menu's bar, which sticks under it on a narrow screen, so its details open over it. */
 .ovcs-header {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 30;
   border-bottom: 1px solid var(--ovcs-border);
   background-color: var(--ovcs-surface);
 }
