@@ -50,14 +50,14 @@ mise run cli       # cargo build --release, stripped and copied to cli/ovcs
 
 ### Arguments
 
-- `<vehicle>` is the snake_case directory name of a vehicle package under `vehicles/`, for example `ovcs_mini` or `my_car`.
+- `<vehicle>` is the app name in a vehicle package's `mix.exs`, which is also its snake_case directory under `vehicles/`, for example `ovcs_mini` or `my_car`. Run from inside a vehicle's folder, at any depth, it may be left out; a value that names neither a vehicle nor a role is then rejected as an unknown vehicle.
 - `<role>` is `vms`, `infotainment`, `vision`, or `bridge-<id>` for any id in the vehicle's `bridge_firmwares/0`, for example `bridge-radio_control`. The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
 - The two positional arguments of `build`, `burn`, `clean`, `upload` and `connect` are order-independent: the resolver picks the vehicle out of the two and treats the other as the role.
-- A missing argument opens an interactive picker. On a non-tty stdin the command exits with status 2 instead. `compute push` picks only the vehicle: its target has no picker.
+- A missing argument opens an interactive picker, except a missing vehicle inside a vehicle's folder, which is that vehicle. On a non-tty stdin the command exits with status 2 instead. `compute push` picks only the vehicle: its target has no picker.
 
 ### How it finds a vehicle
 
-The CLI converts the directory name to UpperCamelCase (`ovcs_mini` becomes `OvcsMini`) and queries that module through short `mix run --no-start` spawns:
+A vehicle package is a Mix project whose `lib/<vehicle>.ex` declares `@behaviour OvcsVehicle`. The CLI converts its app name to UpperCamelCase (`ovcs_mini` becomes `OvcsMini`) and queries that module through short `mix run --no-start` spawns:
 
 - A fixed role exists when the module exports the role's composer callback: `vms` with `vms/0`, `infotainment` with `infotainment/0`, `vision` with `vision/0`.
 - The role's Nerves target then comes from `vms_target/0`, `infotainment_target/0` or `vision_target/0`. A composer callback without its target callback is an error.

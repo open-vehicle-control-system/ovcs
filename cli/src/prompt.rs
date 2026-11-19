@@ -34,7 +34,7 @@ pub fn choose(label: &str, choices: &[String]) -> Result<String> {
 }
 
 /// Vehicle picker — centered title, one row per vehicle (module atom +
-/// snake_case dir). It shows only what `vehicles::list` already globbed:
+/// app name). It shows only what `vehicles::list` already globbed:
 /// probing Nerves targets would boot Mix per vehicle before it could draw.
 pub fn choose_vehicle(vehicles: &[Vehicle]) -> Result<Vehicle> {
     if vehicles.is_empty() {

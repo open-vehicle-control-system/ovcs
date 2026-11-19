@@ -23,22 +23,48 @@ pub fn list(repo_root: &Path) -> Result<Vec<Vehicle>> {
     let pattern_str = pattern.to_str().context("non-utf8 repo root")?;
     let mut vehicles = Vec::new();
     for entry in glob(pattern_str)? {
-        let mix_path = entry?;
-        let vehicle_path = mix_path.parent().unwrap().to_path_buf();
-        let dir = vehicle_path
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
-        vehicles.push(Vehicle {
-            module: module_for(&dir),
-            dir,
-            path: vehicle_path,
-        });
+        if let Some(vehicle) = vehicle_at(entry?.parent().unwrap()) {
+            vehicles.push(vehicle);
+        }
     }
     vehicles.sort_by(|a, b| a.dir.cmp(&b.dir));
     Ok(vehicles)
+}
+
+/// The vehicle package at `path`, named by its app rather than its folder,
+/// which a checkout of the vehicle's own repository may name differently.
+/// OVCS's own packages depend on `ovcs_vehicle` too; only a vehicle's main
+/// module implements the `OvcsVehicle` behaviour.
+pub fn vehicle_at(path: &Path) -> Option<Vehicle> {
+    let mix_exs = std::fs::read_to_string(path.join("mix.exs")).ok()?;
+    let dir = app_name(&mix_exs)?;
+    let main_module = std::fs::read_to_string(path.join(format!("lib/{dir}.ex"))).ok()?;
+    if !implements_ovcs_vehicle(&main_module) {
+        return None;
+    }
+    Some(Vehicle {
+        module: module_for(&dir),
+        dir,
+        path: path.to_path_buf(),
+    })
+}
+
+/// The vehicle package containing `start`: `start` itself or its nearest ancestor that is one.
+pub fn enclosing(start: &Path) -> Option<Vehicle> {
+    start.ancestors().find_map(vehicle_at)
+}
+
+/// The app a `mix.exs` source declares (`app: :roomba` → `roomba`).
+pub fn app_name(mix_exs: &str) -> Option<String> {
+    let app = regex::Regex::new(r"\bapp:\s*:(\w+)").unwrap();
+    app.captures(mix_exs)
+        .map(|captures| captures[1].to_string())
+}
+
+/// Whether an Elixir source declares `@behaviour OvcsVehicle`.
+pub fn implements_ovcs_vehicle(source: &str) -> bool {
+    let behaviour = regex::Regex::new(r"(?m)^\s*@behaviour OvcsVehicle\s*$").unwrap();
+    behaviour.is_match(source)
 }
 
 pub fn module_for(dir: &str) -> String {
@@ -411,9 +437,90 @@ fn probe_failure(dir: &str, stdout: &str, stderr: &str) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::{
-        host_for, local_sname, local_sname_prefix, module_for, probe_env, probe_failure,
-        probe_payload, target_callback, target_snippet, PROBE_MARKER,
+        app_name, enclosing, host_for, implements_ovcs_vehicle, local_sname, local_sname_prefix,
+        module_for, probe_env, probe_failure, probe_payload, target_callback, target_snippet,
+        vehicle_at, PROBE_MARKER,
     };
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// A fresh directory named `name` under the system temp dir.
+    pub(crate) fn scratch_dir(name: &str) -> PathBuf {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir()
+            .join(format!(
+                "ovcs-cli-test-{}-{}",
+                std::process::id(),
+                COUNT.fetch_add(1, Ordering::SeqCst)
+            ))
+            .join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// A Mix package at `dir` with app `app`, depending on `ovcs_vehicle`,
+    /// whose `lib/<app>.ex` holds `main_module`.
+    fn write_package(dir: &std::path::Path, app: &str, main_module: &str) {
+        std::fs::write(
+            dir.join("mix.exs"),
+            format!("[app: :{app}, deps: [{{:ovcs_vehicle, path: \"x\"}}]]"),
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.join("lib")).unwrap();
+        std::fs::write(dir.join(format!("lib/{app}.ex")), main_module).unwrap();
+    }
+
+    fn write_vehicle(dir: &std::path::Path, app: &str) {
+        write_package(dir, app, "defmodule V do\n  @behaviour OvcsVehicle\nend\n");
+    }
+
+    #[test]
+    fn a_subfolder_of_a_vehicle_is_inside_it() {
+        let dir = scratch_dir("roomba");
+        write_vehicle(&dir, "roomba");
+        std::fs::create_dir_all(dir.join("lib/roomba")).unwrap();
+        assert_eq!(enclosing(&dir.join("lib/roomba")).unwrap().dir, "roomba");
+    }
+
+    #[test]
+    fn outside_any_vehicle_nothing_encloses() {
+        assert!(enclosing(&scratch_dir("elsewhere")).is_none());
+    }
+
+    #[test]
+    fn the_app_name_comes_from_mix_exs() {
+        let source = "def project do\n  [\n    app: :roomba,\n    version: \"0.1.0\"";
+        assert_eq!(app_name(source), Some("roomba".to_string()));
+    }
+
+    #[test]
+    fn a_vehicle_implements_the_ovcs_vehicle_behaviour() {
+        assert!(implements_ovcs_vehicle(
+            "defmodule Roomba do\n  @behaviour OvcsVehicle\n  @behaviour RosBridge\n"
+        ));
+        assert!(!implements_ovcs_vehicle(
+            "defmodule VmsCore do\n  alias OvcsVehicle.Firmware\n"
+        ));
+    }
+
+    #[test]
+    fn an_ovcs_package_depending_on_ovcs_vehicle_is_not_a_vehicle() {
+        let dir = scratch_dir("core");
+        write_package(&dir, "vms_core", "defmodule VmsCore do\nend\n");
+        assert!(vehicle_at(&dir).is_none());
+    }
+
+    #[test]
+    fn a_checkout_named_differently_from_its_app_is_known_by_its_app() {
+        let dir = scratch_dir("ovcs-roomba");
+        write_vehicle(&dir, "roomba");
+        let vehicle = vehicle_at(&dir).unwrap();
+        assert_eq!(
+            (vehicle.dir.as_str(), vehicle.module.as_str()),
+            ("roomba", "Roomba")
+        );
+        assert_eq!(vehicle.path, dir);
+    }
 
     #[test]
     fn a_probe_runs_in_dev_with_the_role_environment() {
