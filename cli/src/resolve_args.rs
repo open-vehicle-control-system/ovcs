@@ -1,14 +1,14 @@
 use anyhow::{anyhow, bail, Result};
 use owo_colors::OwoColorize;
 
-use crate::firmware::roles_for;
+use crate::firmware::{bridge_id, roles_for, static_roles};
 use crate::prompt::{choose, choose_vehicle};
 use crate::repo_root::repo_root;
 use crate::vehicles::{self, Vehicle};
 
 /// Resolve a single `vehicle` argument: if `arg` matches a known
-/// directory name use that vehicle, otherwise fall back to the
-/// interactive picker. Shared by `run`, `attach`, `can setup`, and
+/// directory name use that vehicle, otherwise the vehicle the working
+/// directory is in, otherwise the interactive picker. Shared by `run`, `attach`, `can setup`, and
 /// `can status` — they all front the same "pick one vehicle" UX.
 pub fn resolve_vehicle(arg: Option<String>) -> Result<Vehicle> {
     let root = repo_root()?;
@@ -18,8 +18,16 @@ pub fn resolve_vehicle(arg: Option<String>) -> Result<Vehicle> {
             .into_iter()
             .find(|vehicle| vehicle.dir == dir)
             .ok_or_else(|| anyhow!("Unknown vehicle {}", dir)),
-        None => choose_vehicle(&list),
+        None => match current_vehicle()? {
+            Some(vehicle) => Ok(vehicle),
+            None => choose_vehicle(&list),
+        },
     }
+}
+
+/// The vehicle package the working directory is in, if any.
+fn current_vehicle() -> Result<Option<Vehicle>> {
+    Ok(vehicles::enclosing(&std::env::current_dir()?))
 }
 
 pub struct ResolvedArgs {
@@ -30,7 +38,8 @@ pub struct ResolvedArgs {
 
 /// Pick just the vehicle out of the two order-independent positional args,
 /// ignoring whichever value isn't a known vehicle (e.g. a stray role).
-/// Falls back to the interactive picker when neither names a vehicle.
+/// Falls back to the vehicle the working directory is in, then to the
+/// interactive picker, when neither names a vehicle.
 /// Used by `build --all`, which builds every role and so needs no role arg.
 pub fn resolve_vehicle_pair(
     vehicle_arg: Option<String>,
@@ -39,21 +48,57 @@ pub fn resolve_vehicle_pair(
     let root = repo_root()?;
     let all = vehicles::list(&root)?;
     let values: Vec<String> = [vehicle_arg, role_arg].into_iter().flatten().collect();
-    let vehicle = named_or_chosen_vehicle(&values, &all)?;
+    let vehicle = named_current_or_chosen(&values, &all)?;
     Ok((root, vehicle))
 }
 
 /// The vehicle the first of `values` naming one designates, else the
-/// interactive picker's choice.
-fn named_or_chosen_vehicle(values: &[String], all: &[Vehicle]) -> Result<Vehicle> {
+/// vehicle the working directory is in, else the interactive picker's choice.
+fn named_current_or_chosen(values: &[String], all: &[Vehicle]) -> Result<Vehicle> {
     let dirs: Vec<String> = all.iter().map(|vehicle| vehicle.dir.clone()).collect();
-    match vehicle_among(values, &dirs) {
-        Some(dir) => match all.iter().find(|vehicle| vehicle.dir == dir) {
+    let current = current_vehicle()?;
+    match pick(
+        values,
+        &dirs,
+        current.as_ref().map(|vehicle| vehicle.dir.as_str()),
+    ) {
+        Pick::Named(dir) => match all.iter().find(|vehicle| vehicle.dir == dir) {
             Some(vehicle) => Ok(vehicle.clone()),
             None => bail!("Unknown vehicle {}", dir),
         },
-        None => choose_vehicle(all),
+        Pick::Current(_) => Ok(current.expect("Pick::Current comes from a current vehicle")),
+        Pick::Unknown(value) => bail!("Unknown vehicle {}", value),
+        Pick::Ask => choose_vehicle(all),
     }
+}
+
+/// Which vehicle the positional values designate.
+#[derive(Debug, PartialEq)]
+enum Pick<'a> {
+    /// One of the values names it.
+    Named(&'a str),
+    /// None does; the working directory is inside it.
+    Current(&'a str),
+    /// None does, and this value is no role either: a mistyped vehicle.
+    Unknown(&'a str),
+    /// Neither: ask interactively.
+    Ask,
+}
+
+fn pick<'a>(values: &'a [String], vehicle_dirs: &[String], current: Option<&'a str>) -> Pick<'a> {
+    match (vehicle_among(values, vehicle_dirs), current) {
+        (Some(dir), _) => Pick::Named(dir),
+        (None, Some(dir)) => match values.iter().find(|value| !is_role_shaped(value)) {
+            Some(unknown) => Pick::Unknown(unknown),
+            None => Pick::Current(dir),
+        },
+        (None, None) => Pick::Ask,
+    }
+}
+
+/// Whether `value` reads as a role: a fixed one, or `bridge-<id>`.
+fn is_role_shaped(value: &str) -> bool {
+    static_roles().contains(&value) || bridge_id(value).is_some()
 }
 
 /// The first of `values` that is one of `vehicle_dirs`.
@@ -90,7 +135,8 @@ fn role_among(values: &[String], vehicle_dir: &str, valid_roles: &[String]) -> R
 }
 
 /// Resolve a (vehicle, role) pair from two order-independent positional
-/// args. Either or both may be omitted — missing values fall back to the
+/// args. Either or both may be omitted: a missing vehicle is the one the
+/// working directory is in, and anything still missing falls back to the
 /// interactive Ratatui picker.
 pub fn resolve_vehicle_role(
     vehicle_arg: Option<String>,
@@ -99,7 +145,7 @@ pub fn resolve_vehicle_role(
     let root = repo_root()?;
     let all = vehicles::list(&root)?;
     let values: Vec<String> = [vehicle_arg, role_arg].into_iter().flatten().collect();
-    let vehicle = named_or_chosen_vehicle(&values, &all)?;
+    let vehicle = named_current_or_chosen(&values, &all)?;
     let vehicle_dir = vehicle.dir.clone();
 
     let valid_roles = roles_for(&vehicle)?;
@@ -130,7 +176,7 @@ pub fn resolve_vehicle_role(
 
 #[cfg(test)]
 mod tests {
-    use super::{role_among, vehicle_among, RoleChoice};
+    use super::{pick, role_among, vehicle_among, Pick, RoleChoice};
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
@@ -202,6 +248,55 @@ mod tests {
         assert_eq!(
             role_among(&values, "ovcs_mini", &ovcs1_roles()),
             RoleChoice::Unknown("ovcs1".to_string())
+        );
+    }
+
+    #[test]
+    fn inside_a_vehicle_a_lone_role_uses_that_vehicle() {
+        assert_eq!(
+            pick(&strings(&["vms"]), &vehicle_dirs(), Some("ovcs_mini")),
+            Pick::Current("ovcs_mini")
+        );
+    }
+
+    #[test]
+    fn a_named_vehicle_beats_the_current_folder() {
+        assert_eq!(
+            pick(
+                &strings(&["ovcs1", "vms"]),
+                &vehicle_dirs(),
+                Some("ovcs_mini")
+            ),
+            Pick::Named("ovcs1")
+        );
+    }
+
+    #[test]
+    fn outside_a_vehicle_with_none_named_the_picker_asks() {
+        assert_eq!(pick(&strings(&["vms"]), &vehicle_dirs(), None), Pick::Ask);
+    }
+
+    #[test]
+    fn inside_a_vehicle_a_value_naming_neither_a_vehicle_nor_a_role_is_unknown() {
+        assert_eq!(
+            pick(
+                &strings(&["ovcs1x", "vms"]),
+                &vehicle_dirs(),
+                Some("ovcs_mini")
+            ),
+            Pick::Unknown("ovcs1x")
+        );
+    }
+
+    #[test]
+    fn inside_a_vehicle_a_bridge_role_alone_uses_that_vehicle() {
+        assert_eq!(
+            pick(
+                &strings(&["bridge-ros"]),
+                &vehicle_dirs(),
+                Some("ovcs_mini")
+            ),
+            Pick::Current("ovcs_mini")
         );
     }
 }
