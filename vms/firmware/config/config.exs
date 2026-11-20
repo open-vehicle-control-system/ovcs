@@ -44,10 +44,13 @@ target = Mix.target() |> to_string()
 # its own file when it needs to override (e.g. a different CAN transceiver
 # on the same SoC). Per-file fallback: vehicle's priv/firmware/vms/<file>
 # wins when present, otherwise the shared target copy is used.
-vehicle_override_rel = "../../vehicles/#{vehicle_dir}/priv/firmware/vms"
+Code.require_file("../../../libraries/ovcs_vehicle/config/vehicle_path.exs", __DIR__)
+firmware_dir = Path.expand("..", __DIR__)
+vehicle_root = OvcsVehicle.VehiclePath.root(vehicle_dir, Path.expand("../..", firmware_dir))
+vehicle_override_abs = Path.join(vehicle_root, "priv/firmware/vms")
+vehicle_override_rel = Path.relative_to(vehicle_override_abs, firmware_dir, force: true)
 target_default_rel = "targets/#{target}"
 
-vehicle_override_abs = Path.expand("../#{vehicle_override_rel}", __DIR__)
 target_default_abs = Path.expand("../#{target_default_rel}", __DIR__)
 
 resolve_firmware_file = fn file ->

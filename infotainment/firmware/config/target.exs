@@ -7,14 +7,17 @@ vehicle_dir = Macro.underscore(vehicle_name)
 vehicle_host = "#{vehicle_dir |> String.replace("_", "-")}-infotainment"
 
 # Per-vehicle environment overrides (SSH keys, Wi-Fi creds, Phoenix
-# secrets). Lives at `vehicles/<vehicle_dir>/.env.exs` so the same
+# secrets). Lives at `<vehicle>/.env.exs` so the same
 # values are picked up by every firmware (vms, infotainment, bridges)
 # of one vehicle. Gitignored.
+Code.require_file("../../../libraries/ovcs_vehicle/config/vehicle_path.exs", __DIR__)
+vehicle_root = OvcsVehicle.VehiclePath.root(vehicle_dir, Path.expand("../../..", __DIR__))
+
 if config_env() in [:dev, :test, :prod] do
   env_files = [".env.exs", ".env.#{config_env()}.exs"]
 
   for filename <- env_files do
-    abs = Path.expand("../../../vehicles/#{vehicle_dir}/#{filename}", __DIR__)
+    abs = Path.join(vehicle_root, filename)
     if File.exists?(abs), do: import_config(abs)
   end
 
@@ -26,7 +29,7 @@ if config_env() in [:dev, :test, :prod] do
   # vehicle. CI builds firmware only to check it compiles and never
   # deploys it, so there the defaults are fine — GitHub sets CI=true.
   unless Enum.any?(env_files, fn filename ->
-           Path.expand("../../../vehicles/#{vehicle_dir}/#{filename}", __DIR__)
+           Path.join(vehicle_root, filename)
            |> File.exists?()
          end) do
     if System.get_env("CI") == "true" do
@@ -35,14 +38,14 @@ if config_env() in [:dev, :test, :prod] do
       raise "no .env.exs for vehicle #{inspect(vehicle_dir)}: a firmware built without it " <>
               "has generated secrets, no SSH keys (you would be locked out), a reset " <>
               "Wi-Fi list, and ZENOH_ENDPOINT_IP=127.0.0.1 (the bridge reaches no router). " <>
-              "Copy vehicles/#{vehicle_dir}/.env.exs.example to .env.exs and fill it in. " <>
+              "Copy #{vehicle_root}/.env.exs.example to .env.exs and fill it in. " <>
               "Set CI=true to build with defaults anyway."
     end
   end
 
   if System.get_env("CI") != "true" and byte_size(System.get_env("SECRET_KEY_BASE", "")) < 64 do
     IO.warn(
-      "SECRET_KEY_BASE in vehicles/#{vehicle_dir}/.env.exs is shorter than 64 bytes: " <>
+      "SECRET_KEY_BASE in #{vehicle_root}/.env.exs is shorter than 64 bytes: " <>
         "replace it with the output of `mix phx.gen.secret`.",
       []
     )

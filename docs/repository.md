@@ -77,7 +77,7 @@ Each component's own README keeps its developer details: build, tests and source
 Two kinds of library live under `libraries/`:
 
 - **In-tree** libraries are framework-internal contracts that evolve with the rest of the code.
-- **Sideloaded** libraries are reusable outside OVCS, so they have their own repositories. They are gitignored here. `mise run libraries`, which `mise install` runs for you, clones them at the commits pinned in `scripts/libraries.tsv`.
+- **Sideloaded** libraries are reusable outside OVCS, so they have their own repositories. They are gitignored here. `mise run libraries`, which `mise install` runs for you, clones them at the commits pinned in `scripts/libraries.tsv`. It never moves an existing clone; `mise run libraries-sync` also moves clean clones to their pins and refuses one with local changes.
 
 A change to a sideloaded library reaches OVCS through a change to its pin. To try a change first:
 
@@ -132,6 +132,7 @@ Each firmware's `runtime.exs` writes the side composer (`Ovcs1.Vms.Composer`, fo
 |---|---|---|
 | `VEHICLE` | Top-level module name of the vehicle to load (case-sensitive) | `Ovcs1`, `OvcsMini`, `Obd2`, or your own |
 | `CAN_NETWORK_MAPPINGS` | Overrides the vehicle's `default_can_mapping/1` (host or target arm) | `ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2` |
+| `OVCS_VEHICLE_PATH` | Absolute path of the vehicle package, when it is not `vehicles/<dir>`; the firmwares, `compose/local` and `OvcsVehicle.Firmware` read it, and the CLI sets it | `/src/my-car` |
 | `BRIDGE_FIRMWARE_ID` | Bridge firmware only: picks one entry from the vehicle's `bridge_firmwares/0` | `radio_control`, `ros` |
 
 ## Elsewhere

@@ -12,6 +12,11 @@
 #     at BEAM start, where `./ovcs run` sets it per role.
 #
 set -euo pipefail
+# A relative OVCS_VEHICLE_PATH names a folder from where the build was started.
+if [ -n "${OVCS_VEHICLE_PATH:-}" ]; then
+  OVCS_VEHICLE_PATH="$(cd "$OVCS_VEHICLE_PATH" && pwd)"
+  export OVCS_VEHICLE_PATH
+fi
 cd "$(dirname "$0")"
 
 : "${VEHICLE:?VEHICLE env var is required (the top-level module name of the vehicle package)}"
@@ -37,9 +42,10 @@ if [ "$MIX_TARGET" = "host" ]; then
 else
   # See vms/firmware/build.sh for the full rationale.
   vehicle_dir=$(elixir -e "IO.write(Macro.underscore(\"$VEHICLE\"))")
-  step "Compiling vehicle ($VEHICLE → vehicles/$vehicle_dir, MIX_TARGET=host)"
+  vehicle_path="${OVCS_VEHICLE_PATH:-../../vehicles/$vehicle_dir}"
+  step "Compiling vehicle ($VEHICLE → $vehicle_path, MIX_TARGET=host)"
   (
-    cd "../../vehicles/$vehicle_dir"
+    cd "$vehicle_path"
     MIX_TARGET=host mix deps.get
     MIX_TARGET=host mix compile
   )

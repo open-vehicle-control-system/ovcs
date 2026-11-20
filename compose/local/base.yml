@@ -87,8 +87,8 @@ services:
       context: ../compute
       dockerfile: images/nav2/Dockerfile
     volumes:
-      - ../../vehicles/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}/nav2:/opt/ovcs/config:ro
-      - ../../vehicles/${OVCS_VEHICLE}/description/${OVCS_VEHICLE}.urdf:/opt/ovcs/description/robot.urdf:ro
+      - ${OVCS_VEHICLE_PATH:-../../vehicles/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}}/nav2:/opt/ovcs/config:ro
+      - ${OVCS_VEHICLE_PATH:-../../vehicles/${OVCS_VEHICLE}}/description/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}.urdf:/opt/ovcs/description/robot.urdf:ro
 
   foxglove_bridge:
     # Also standalone-only: with a vehicle present, Foxglove Studio
@@ -103,7 +103,7 @@ services:
       FOXGLOVE_BRIDGE_PORT: ${FOXGLOVE_BRIDGE_PORT:-8765}
     # The vehicle's description, the ovcs_description package its meshes are named in.
     volumes:
-      - ../../vehicles/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}/description:/opt/ovcs/description:ro
+      - ${OVCS_VEHICLE_PATH:-../../vehicles/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}}/description:/opt/ovcs/description:ro
     command: ["foxglove_bridge"]
 
   calibrator:

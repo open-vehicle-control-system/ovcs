@@ -485,7 +485,7 @@ fn simulator_role(root: &std::path::Path, vehicle: &Vehicle) -> Role {
     Role {
         label: SIMULATOR_ROLE.to_string(),
         cwd: root.join("simulator/runner"),
-        env: vec![("VEHICLE".to_string(), vehicle.module.clone())],
+        env: firmware::firmware_env(vehicle).into_iter().collect(),
     }
 }
 
@@ -540,10 +540,10 @@ fn ensure_built(roles: &[Role], vehicle: &Vehicle) -> Result<()> {
                 cwd: group.cwd,
                 steps: vec![BuildStep {
                     panes: vec![pane],
-                    env: HashMap::from([
-                        ("MIX_TARGET".to_string(), "host".to_string()),
-                        ("VEHICLE".to_string(), vehicle.module.clone()),
-                    ]),
+                    env: firmware::firmware_env(vehicle)
+                        .into_iter()
+                        .chain([("MIX_TARGET".to_string(), "host".to_string())])
+                        .collect(),
                 }],
             }
         })

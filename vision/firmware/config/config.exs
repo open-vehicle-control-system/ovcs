@@ -34,10 +34,19 @@ target = Mix.target() |> to_string()
 # Per-file fallback, as in vms/firmware: a vehicle's
 # priv/firmware/vision/<file> wins over targets/<mix-target>/<file>.
 # `fwup_conf` must be relative (Nerves joins it to the app dir).
-vehicle_override_relative = "../../vehicles/#{vehicle_directory}/priv/firmware/vision"
+Code.require_file("../../../libraries/ovcs_vehicle/config/vehicle_path.exs", __DIR__)
+firmware_directory = Path.expand("..", __DIR__)
+
+vehicle_root =
+  OvcsVehicle.VehiclePath.root(vehicle_directory || "", Path.expand("../..", firmware_directory))
+
+vehicle_override_absolute = Path.join(vehicle_root, "priv/firmware/vision")
+
+vehicle_override_relative =
+  Path.relative_to(vehicle_override_absolute, firmware_directory, force: true)
+
 target_default_relative = "targets/#{target}"
 
-vehicle_override_absolute = Path.expand("../#{vehicle_override_relative}", __DIR__)
 target_default_absolute = Path.expand("../#{target_default_relative}", __DIR__)
 
 resolve_firmware_file = fn file ->

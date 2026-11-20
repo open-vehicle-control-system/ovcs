@@ -9,11 +9,14 @@ vehicle_host = "#{vehicle_directory |> String.replace("_", "-")}-vision"
 # Per-vehicle environment overrides (SSH keys, Wi-Fi creds, Phoenix
 # secrets, Zenoh router), shared by every firmware of one vehicle.
 # Gitignored.
+Code.require_file("../../../libraries/ovcs_vehicle/config/vehicle_path.exs", __DIR__)
+vehicle_root = OvcsVehicle.VehiclePath.root(vehicle_directory, Path.expand("../../..", __DIR__))
+
 if config_env() in [:dev, :test, :prod] do
   env_files = [".env.exs", ".env.#{config_env()}.exs"]
 
   for filename <- env_files do
-    env_file_path = Path.expand("../../../vehicles/#{vehicle_directory}/#{filename}", __DIR__)
+    env_file_path = Path.join(vehicle_root, filename)
     if File.exists?(env_file_path), do: import_config(env_file_path)
   end
 
@@ -22,7 +25,7 @@ if config_env() in [:dev, :test, :prod] do
   # fails instead. CI only checks that firmware compiles (GitHub sets
   # CI=true).
   unless Enum.any?(env_files, fn filename ->
-           Path.expand("../../../vehicles/#{vehicle_directory}/#{filename}", __DIR__)
+           Path.join(vehicle_root, filename)
            |> File.exists?()
          end) do
     if System.get_env("CI") == "true" do
@@ -34,7 +37,7 @@ if config_env() in [:dev, :test, :prod] do
       raise "no .env.exs for vehicle #{inspect(vehicle_directory)}: a firmware built without it " <>
               "has generated secrets, no SSH keys (you would be locked out), a reset " <>
               "Wi-Fi list, and ZENOH_ENDPOINT_IP=127.0.0.1 (the vision unit reaches no " <>
-              "router). Copy vehicles/#{vehicle_directory}/.env.exs.example to .env.exs and fill " <>
+              "router). Copy #{vehicle_root}/.env.exs.example to .env.exs and fill " <>
               "it in. Set CI=true to build with defaults anyway."
     end
   end

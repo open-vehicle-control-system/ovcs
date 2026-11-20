@@ -16,6 +16,11 @@
 # the rpi4 Nerves target.
 #
 set -euo pipefail
+# A relative OVCS_VEHICLE_PATH names a folder from where the build was started.
+if [ -n "${OVCS_VEHICLE_PATH:-}" ]; then
+  OVCS_VEHICLE_PATH="$(cd "$OVCS_VEHICLE_PATH" && pwd)"
+  export OVCS_VEHICLE_PATH
+fi
 cd "$(dirname "$0")"
 
 : "${MIX_TARGET:=ovcs_base_can_system_rpi4}"
@@ -46,15 +51,16 @@ if [ "$MIX_TARGET" = "host" ]; then
   step "Compiling for host (VEHICLE=$VEHICLE)"
   mix compile
 else
-  # The vehicle (`vehicles/<dir>/`) is its own Mix project and not a dep
+  # The vehicle (`$OVCS_VEHICLE_PATH`, else `vehicles/<dir>/`) is its own Mix project and not a dep
   # of vms_firmware (the dep arrow points the other way), so its beams
   # never end up in the firmware release on their own. mix.exs's
   # `copy_vehicle_beams` release step copies them in — it needs them
-  # compiled at `vehicles/<dir>/_build/dev/lib/<dir>/ebin/` first.
+  # compiled at `<vehicle>/_build/dev/lib/<dir>/ebin/` first.
   vehicle_dir=$(elixir -e "IO.write(Macro.underscore(\"$VEHICLE\"))")
-  step "Compiling vehicle ($VEHICLE → vehicles/$vehicle_dir, MIX_TARGET=host)"
+  vehicle_path="${OVCS_VEHICLE_PATH:-../../vehicles/$vehicle_dir}"
+  step "Compiling vehicle ($VEHICLE → $vehicle_path, MIX_TARGET=host)"
   (
-    cd "../../vehicles/$vehicle_dir"
+    cd "$vehicle_path"
     MIX_TARGET=host mix deps.get
     MIX_TARGET=host mix compile
   )

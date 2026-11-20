@@ -13,6 +13,11 @@
 # Invoking directly: VEHICLE is required; MIX_TARGET falls back to rpi5.
 #
 set -euo pipefail
+# A relative OVCS_VEHICLE_PATH names a folder from where the build was started.
+if [ -n "${OVCS_VEHICLE_PATH:-}" ]; then
+  OVCS_VEHICLE_PATH="$(cd "$OVCS_VEHICLE_PATH" && pwd)"
+  export OVCS_VEHICLE_PATH
+fi
 cd "$(dirname "$0")"
 
 : "${MIX_TARGET:=rpi5}"
@@ -40,9 +45,10 @@ else
   # The vehicle is not a dep of vision_firmware; mix.exs's
   # `copy_vehicle_app` release step copies its compiled app in.
   vehicle_dir=$(elixir -e "IO.write(Macro.underscore(\"$VEHICLE\"))")
-  step "Compiling vehicle ($VEHICLE → vehicles/$vehicle_dir, MIX_TARGET=host)"
+  vehicle_path="${OVCS_VEHICLE_PATH:-../../vehicles/$vehicle_dir}"
+  step "Compiling vehicle ($VEHICLE → $vehicle_path, MIX_TARGET=host)"
   (
-    cd "../../vehicles/$vehicle_dir"
+    cd "$vehicle_path"
     MIX_TARGET=host mix deps.get
     MIX_TARGET=host mix compile
   )

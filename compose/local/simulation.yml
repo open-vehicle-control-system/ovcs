@@ -48,9 +48,9 @@ services:
     volumes:
       # The vehicle's model and simulation.yaml, mounted under its own
       # name.
-      - ../../vehicles/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}/description:/opt/ovcs/vehicles/${OVCS_VEHICLE}:ro
+      - ${OVCS_VEHICLE_PATH:-../../vehicles/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}}/description:/opt/ovcs/vehicles/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}:ro
       # Again as the ovcs_description package its meshes are named in.
-      - ../../vehicles/${OVCS_VEHICLE}/description:/opt/ovcs/ament/share/ovcs_description:ro
+      - ${OVCS_VEHICLE_PATH:-../../vehicles/${OVCS_VEHICLE}}/description:/opt/ovcs/ament/share/ovcs_description:ro
       # Macros shared by every model. The xacros reach it as
       # ../../common relative to themselves, which resolves inside the
       # container regardless of where the files sit in the repo.
@@ -96,7 +96,7 @@ services:
     # without a rebuild; the parameters are the vehicle's.
     volumes:
       - ../compute/images/nav2/launch:/opt/ovcs/launch:ro
-      - ../../vehicles/${OVCS_VEHICLE}/nav2:/opt/ovcs/config:ro
+      - ${OVCS_VEHICLE_PATH:-../../vehicles/${OVCS_VEHICLE}}/nav2:/opt/ovcs/config:ro
     command:
       - bash
       - -lc
@@ -131,8 +131,8 @@ services:
       - /dev/dri:/dev/dri
       # The GUI loads its own copies of the model's meshes, from the
       # path the server spawned it with.
-      - ../../vehicles/${OVCS_VEHICLE}/description:/opt/ovcs/vehicles/${OVCS_VEHICLE}:ro
-      - ../../vehicles/${OVCS_VEHICLE}/description:/opt/ovcs/ament/share/ovcs_description:ro
+      - ${OVCS_VEHICLE_PATH:-../../vehicles/${OVCS_VEHICLE}}/description:/opt/ovcs/vehicles/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}:ro
+      - ${OVCS_VEHICLE_PATH:-../../vehicles/${OVCS_VEHICLE}}/description:/opt/ovcs/ament/share/ovcs_description:ro
     device_cgroup_rules:
       - 'c 226:* rmw'
     command:

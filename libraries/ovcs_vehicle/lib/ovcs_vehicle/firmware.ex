@@ -101,7 +101,8 @@ defmodule OvcsVehicle.Firmware do
   Resolve the configured vehicle module, if any.
 
   * `config_dir` — usually `__DIR__` from the calling `runtime.exs`
-    (anchor for the relative ebin path under `vehicles/`).
+    (anchor for the relative ebin path under `vehicles/` when
+    `OVCS_VEHICLE_PATH` is unset).
   * `config_env` — `config_env()` from the caller; picks the right
     `_build/<env>/lib/…` tree.
   * `vehicle_name` — optional override when callers want to honour
@@ -137,17 +138,22 @@ defmodule OvcsVehicle.Firmware do
   end
 
   # The vehicle's ebin lives in different places on host vs firmware:
-  #   * host (`./ovcs run`): `vehicles/<dir>/_build/<env>/lib/<dir>/ebin`
+  #   * host (`./ovcs run`): `<vehicle>/_build/<env>/lib/<dir>/ebin`, the
+  #     vehicle being at `OVCS_VEHICLE_PATH`, else `vehicles/<dir>`
   #   * firmware release: `<release>/lib/<dir>-<vsn>/ebin`, copied in by
   #     each firmware's `mix.exs` `copy_vehicle_app/1` release step.
   # Try both, prefer the host path when present (it's the live one
   # during `./ovcs run`).
   defp locate_vehicle_ebin!(dir, config_env, config_dir) do
     host_ebin =
-      Path.expand(
-        "../../../vehicles/#{dir}/_build/#{config_env}/lib/#{dir}/ebin",
-        config_dir
-      )
+      Path.join([
+        host_vehicle_root(dir, config_dir),
+        "_build",
+        "#{config_env}",
+        "lib",
+        dir,
+        "ebin"
+      ])
 
     cond do
       File.dir?(host_ebin) ->
@@ -164,10 +170,17 @@ defmodule OvcsVehicle.Firmware do
           - host  : #{host_ebin}
           - release: <release>/lib/#{dir}-*/ebin (relative to #{config_dir})
 
-        On host: run `mix compile` in vehicles/#{dir}/.
+        On host: run `mix compile` in #{host_vehicle_root(dir, config_dir)}.
         On firmware: ensure the build's `copy_vehicle_app/1` release step
         ran and copied the vehicle into the release's lib.
         """
+    end
+  end
+
+  defp host_vehicle_root(dir, config_dir) do
+    case System.get_env("OVCS_VEHICLE_PATH") do
+      path when path in [nil, ""] -> Path.expand("../../../vehicles/#{dir}", config_dir)
+      path -> Path.expand(path)
     end
   end
 
@@ -201,7 +214,7 @@ defmodule OvcsVehicle.Firmware do
         raise """
         Vehicle app #{inspect(app)} has no modules in its .app.
 
-        On host: did you run `mix compile` in vehicles/#{dir}/?
+        On host: did you run `mix compile` in the vehicle's folder?
         On firmware: did the build's `copy_vehicle_app/1` release step
         copy the vehicle into the release's lib?
         """

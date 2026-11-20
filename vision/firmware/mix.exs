@@ -113,12 +113,12 @@ defmodule VisionFirmware.MixProject do
   defp copy_vehicle_app(release) do
     if vehicle_name = System.get_env("VEHICLE") do
       vehicle_directory = Macro.underscore(vehicle_name)
+      Code.require_file("../../libraries/ovcs_vehicle/config/vehicle_path.exs", __DIR__)
 
-      vehicle_app_path =
-        Path.expand(
-          "../../vehicles/#{vehicle_directory}/_build/dev/lib/#{vehicle_directory}",
-          __DIR__
-        )
+      vehicle_root =
+        OvcsVehicle.VehiclePath.root(vehicle_directory, Path.expand("../..", __DIR__))
+
+      vehicle_app_path = Path.join([vehicle_root, "_build/dev/lib", vehicle_directory])
 
       unless File.dir?(vehicle_app_path) do
         Mix.raise("""
@@ -129,7 +129,7 @@ defmodule VisionFirmware.MixProject do
         Compile the vehicle first (the `./ovcs build` helper does this
         for you):
 
-            (cd vehicles/#{vehicle_directory} && MIX_TARGET=host mix compile)
+            (cd #{vehicle_root} && MIX_TARGET=host mix compile)
         """)
       end
 

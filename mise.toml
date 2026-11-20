@@ -58,6 +58,10 @@ run = "./scripts/libraries.sh clone"
 description = "Fail when a clone in libraries/ is not at its pinned commit"
 run = "./scripts/libraries.sh check"
 
+[tasks.libraries-sync]
+description = "Clone missing libraries and move clean clones to their pinned commit"
+run = "./scripts/libraries.sh sync"
+
 [tasks.secrets]
 description = "Scan commits for leaked secrets with gitleaks (default range: origin/main..HEAD)"
 tools = { gitleaks = "8.30.1" }
