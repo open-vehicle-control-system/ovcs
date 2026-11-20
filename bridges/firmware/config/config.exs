@@ -48,16 +48,18 @@ vehicle_dir = vehicle_name && Macro.underscore(vehicle_name)
 target = Mix.target() |> to_string()
 
 # Same per-file fallback as vms/firmware: a vehicle override at
-# vehicles/<vehicle>/priv/firmware/bridges/<id>/<file> wins over the
+# <vehicle>/priv/firmware/bridges/<id>/<file> wins over the
 # shared default at bridges/firmware/targets/<target>/<file>.
 # Relative paths must be used for `fwup_conf` (Nerves concatenates
 # absolute paths to the app dir).
-vehicle_override_rel =
-  "../../vehicles/#{vehicle_dir}/priv/firmware/bridges/#{bridge_firmware_id}"
+Code.require_file("../../../libraries/ovcs_vehicle/config/vehicle_path.exs", __DIR__)
+firmware_dir = Path.expand("..", __DIR__)
+vehicle_root = OvcsVehicle.VehiclePath.root(vehicle_dir || "", Path.expand("../..", firmware_dir))
+vehicle_override_abs = Path.join(vehicle_root, "priv/firmware/bridges/#{bridge_firmware_id}")
+vehicle_override_rel = Path.relative_to(vehicle_override_abs, firmware_dir, force: true)
 
 target_default_rel = "targets/#{target}"
 
-vehicle_override_abs = Path.expand("../#{vehicle_override_rel}", __DIR__)
 target_default_abs = Path.expand("../#{target_default_rel}", __DIR__)
 
 resolve_firmware_file = fn file ->

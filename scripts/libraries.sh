@@ -5,9 +5,12 @@
 #
 #   mise run libraries          # clone missing libraries at their pin
 #   mise run libraries-check    # fail when a clone is not at its pin
+#   mise run libraries-sync     # also move clean clones to their pin
 #
-# An existing clone is never moved, so local work in it survives; clone
-# reports it and check fails on it.
+# clone never moves an existing clone, so local work in it survives;
+# clone reports it and check fails on it. sync is for a checkout nobody
+# edits, such as a vehicle's deps/ovcs: it moves clean clones and fails
+# on a clone with local changes or unpushed commits, leaving it where it is.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,8 +19,8 @@ MANIFEST="$HERE/libraries.tsv"
 MODE="${1:-clone}"
 
 case "$MODE" in
-  clone | check) ;;
-  *) echo "usage: $0 [clone|check]" >&2; exit 2 ;;
+  clone | check | sync) ;;
+  *) echo "usage: $0 [clone|check|sync]" >&2; exit 2 ;;
 esac
 
 mismatches=0
@@ -41,12 +44,26 @@ while IFS=$'\t' read -r repository commit; do
   head="$(git -C "$dir" rev-parse HEAD)"
   if [ "$head" = "$commit" ]; then
     echo "✓ $name at ${commit:0:7}"
+  elif [ "$MODE" = sync ]; then
+    if [ -n "$(git -C "$dir" status --porcelain)" ]; then
+      echo "✗ $name has local changes; left at ${head:0:7}, pinned at ${commit:0:7}"
+      mismatches=$((mismatches + 1))
+      continue
+    fi
+    if [ -n "$(git -C "$dir" rev-list HEAD --not --remotes)" ]; then
+      echo "✗ $name has local commits not on its remote; left at ${head:0:7}, pinned at ${commit:0:7}"
+      mismatches=$((mismatches + 1))
+      continue
+    fi
+    echo "→ moving $name from ${head:0:7} to ${commit:0:7}"
+    git -C "$dir" cat-file -e "$commit^{commit}" 2>/dev/null || git -C "$dir" fetch --quiet origin
+    git -C "$dir" checkout --quiet --detach "$commit"
   else
     echo "✗ $name at ${head:0:7}, pinned at ${commit:0:7}"
     mismatches=$((mismatches + 1))
   fi
 done < "$MANIFEST"
 
-if [ "$MODE" = check ] && [ "$mismatches" -gt 0 ]; then
+if [ "$MODE" != clone ] && [ "$mismatches" -gt 0 ]; then
   exit 1
 fi

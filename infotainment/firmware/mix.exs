@@ -97,13 +97,15 @@ defmodule OvcsInfotainmentFirmware.MixProject do
   end
 
   # See vms/firmware/mix.exs:copy_vehicle_app/1 for the full rationale —
-  # the vehicle (`vehicles/<dir>/`) is its own Mix project and not a dep
+  # the vehicle (`OVCS_VEHICLE_PATH`, else `vehicles/<dir>/`) is its own Mix project and not a dep
   # here, so its full OTP app dir (ebin + priv + .app) is hand-copied
   # into the release.
   defp copy_vehicle_app(release) do
     if vehicle_name = System.get_env("VEHICLE") do
       dir = Macro.underscore(vehicle_name)
-      src = Path.expand("../../vehicles/#{dir}/_build/dev/lib/#{dir}", __DIR__)
+      Code.require_file("../../libraries/ovcs_vehicle/config/vehicle_path.exs", __DIR__)
+      vehicle_root = OvcsVehicle.VehiclePath.root(dir, Path.expand("../..", __DIR__))
+      src = Path.join([vehicle_root, "_build/dev/lib", dir])
 
       unless File.dir?(src) do
         Mix.raise("""
@@ -114,7 +116,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
         Compile the vehicle first (the `./ovcs build` helper does this
         for you):
 
-            (cd vehicles/#{dir} && MIX_TARGET=host mix compile)
+            (cd #{vehicle_root} && MIX_TARGET=host mix compile)
         """)
       end
 

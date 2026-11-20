@@ -97,7 +97,7 @@ defmodule VmsFirmware.MixProject do
 
   # Copy the selected vehicle's compiled OTP app (ebin + priv + .app)
   # into the release as `lib/<vehicle_dir>-<vsn>/`. The vehicle is its
-  # own Mix project under `vehicles/<dir>/` and not a Mix dep here (the
+  # own Mix project (at `OVCS_VEHICLE_PATH`, else `vehicles/<dir>/`) and not a Mix dep here (the
   # dep arrow points the other way), so without this step the vehicle's
   # files never make it into the release.
   #
@@ -115,7 +115,9 @@ defmodule VmsFirmware.MixProject do
   defp copy_vehicle_app(release) do
     if vehicle_name = System.get_env("VEHICLE") do
       dir = Macro.underscore(vehicle_name)
-      src = Path.expand("../../vehicles/#{dir}/_build/dev/lib/#{dir}", __DIR__)
+      Code.require_file("../../libraries/ovcs_vehicle/config/vehicle_path.exs", __DIR__)
+      vehicle_root = OvcsVehicle.VehiclePath.root(dir, Path.expand("../..", __DIR__))
+      src = Path.join([vehicle_root, "_build/dev/lib", dir])
 
       unless File.dir?(src) do
         Mix.raise("""
@@ -126,7 +128,7 @@ defmodule VmsFirmware.MixProject do
         Compile the vehicle first (the `./ovcs build` helper does this
         for you):
 
-            (cd vehicles/#{dir} && MIX_TARGET=host mix compile)
+            (cd #{vehicle_root} && MIX_TARGET=host mix compile)
         """)
       end
 
