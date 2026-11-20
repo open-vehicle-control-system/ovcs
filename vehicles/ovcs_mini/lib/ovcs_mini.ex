@@ -173,9 +173,12 @@ defmodule OvcsMini do
 
     [
       vehicle: simulator.vehicle,
-      # Shaft-driven 4WD: the motor turns at the four wheels' mean.
-      wheel_joints: ~w(front_left_wheel_joint front_right_wheel_joint
-                       rear_left_wheel_joint rear_right_wheel_joint),
+      wheel_joints: %{
+        front_left: "front_left_wheel_joint",
+        front_right: "front_right_wheel_joint",
+        rear_left: "rear_left_wheel_joint",
+        rear_right: "rear_right_wheel_joint"
+      },
       simulated_components: simulator.simulated_components
     ]
   end

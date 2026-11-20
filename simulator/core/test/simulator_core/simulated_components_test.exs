@@ -12,7 +12,7 @@ defmodule SimulatorCore.SimulatedComponentsTest do
   alias SimulatorCore.SimulatedComponents.OVCS.{GenericController, RadioControl}
   alias SimulatorCore.SimulatedComponents.Traxxas.Steering
   alias SimulatorCore.SimulatedComponents.Vesc.MotorController
-  alias SimulatorCore.Vehicle
+  alias SimulatorCore.{Efforts, Vehicle, WorldState}
 
   @dt 0.01
   @pole_pairs 2
@@ -27,85 +27,193 @@ defmodule SimulatorCore.SimulatedComponentsTest do
       measured_speed_m_s: speed
     }
 
+  # Every wheel turning at `speed`, having turned `angle_rad`.
+  defp world(speed, angle_rad \\ 0.0) do
+    wheel = %{angle_rad: angle_rad, omega_rad_s: speed / @wheel_radius, in_contact: true}
+    %{WorldState.at_rest(@wheel_radius) | wheels: Map.new(WorldState.wheels(), &{&1, wheel})}
+  end
+
   defp signals(values),
     do: Map.new(values, fn {name, value} -> {name, %Signal{name: name, value: value}} end)
 
+  @torque_per_ampere 0.06
+  @max_torque 20.0 * @torque_per_ampere
+
   defp vesc do
     {state, _received, _emitted} =
-      MotorController.init(pole_pairs: @pole_pairs, motor_to_wheel_ratio: @ratio, min_erpm: 300)
+      MotorController.init(
+        pole_pairs: @pole_pairs,
+        motor_to_wheel_ratio: @ratio,
+        min_erpm: 300,
+        wheel_torque_per_ampere_nm: @torque_per_ampere,
+        max_current_a: 20.0,
+        speed_loop_gain_nm_s_m: 2.0,
+        driven_wheels: WorldState.wheels()
+      )
 
     state
   end
 
   defp motor_rpm(speed), do: speed / (2 * :math.pi() * @wheel_radius) * 60 * @ratio
 
+  defp command(name, values), do: MotorController.handle_frame(name, signals(values), vesc(), 0)
+
+  defp efforts(state, world, now_ms \\ 10),
+    do: Efforts.combine(MotorController.efforts(state, world, now_ms), 0.0)
+
   describe "Vesc.MotorController" do
-    test "set_rpm sets its speed" do
-      erpm = round(motor_rpm(0.5) * @pole_pairs)
-      state = MotorController.handle_frame("vesc_set_rpm", signals(%{"erpm" => erpm}), vesc(), 0)
+    test "set_current drives by its torque" do
+      state = command("vesc_set_current", %{"current" => Decimal.new("10.0")})
 
-      [{:speed, speed}] = MotorController.actuations(state, vehicle(0.0), 10)
-      assert_in_delta speed, 0.5, 0.001
+      assert_in_delta efforts(state, world(0.0)).drive_torque_nm, 0.6, 1.0e-9
     end
 
-    test "a set_rpm under the minimum erpm brakes to a stop" do
-      state = MotorController.handle_frame("vesc_set_rpm", signals(%{"erpm" => 200}), vesc(), 0)
-      assert MotorController.actuations(state, vehicle(0.3), 10) == [{:speed, 0.0}]
+    test "set_rpm drives towards its speed, within its current limit" do
+      erpm = round(motor_rpm(1.0) * @pole_pairs)
+      state = command("vesc_set_rpm", %{"erpm" => erpm})
+
+      assert_in_delta efforts(state, world(0.0)).drive_torque_nm, @max_torque, 1.0e-9
+      assert_in_delta efforts(state, world(0.9)).drive_torque_nm, 0.2, 0.01
     end
 
-    test "set_duty sets its share of the full-duty speed" do
-      state = MotorController.handle_frame("vesc_set_duty", signals(%{"duty" => 0.5}), vesc(), 0)
-      assert MotorController.actuations(state, vehicle(0.0), 10) == [{:speed, 1.5}]
+    test "a negative set_rpm drives backwards from rest" do
+      erpm = round(-motor_rpm(1.0) * @pole_pairs)
+      state = command("vesc_set_rpm", %{"erpm" => erpm})
+
+      assert_in_delta efforts(state, world(0.0)).drive_torque_nm, -@max_torque, 1.0e-9
     end
 
-    test "set_current_brake decelerates, and reports a negative motor current" do
-      brake = signals(%{"current" => Decimal.new("4.0")})
-      state = MotorController.handle_frame("vesc_set_current_brake", brake, vesc(), 0)
+    test "a set_rpm under the minimum erpm brakes with its full current" do
+      braking = efforts(command("vesc_set_rpm", %{"erpm" => 200}), world(0.3))
 
-      assert MotorController.actuations(state, vehicle(0.5), 10) == [{:deceleration, 2.0}]
+      assert {braking.drive_torque_nm, braking.brake_torque_nm} == {0.0, @max_torque}
+    end
 
-      {_state, [{_, "vesc_status", status}, _]} =
-        MotorController.report(state, vehicle(0.5), 10)
+    test "set_duty drives towards its share of the full-duty speed" do
+      state = command("vesc_set_duty", %{"duty" => 0.5})
 
+      assert_in_delta efforts(state, world(1.0)).drive_torque_nm, 2.0 * (1.5 - 1.0), 1.0e-9
+    end
+
+    test "set_duty at zero brakes with its full current" do
+      assert efforts(command("vesc_set_duty", %{"duty" => 0.0}), world(0.3)).brake_torque_nm ==
+               @max_torque
+    end
+
+    test "set_current_brake brakes by its torque, and reports a negative motor current" do
+      state = command("vesc_set_current_brake", %{"current" => Decimal.new("4.0")})
+
+      assert_in_delta efforts(state, world(0.5)).brake_torque_nm, 0.24, 1.0e-9
+
+      {_state, [{_, "vesc_status", status}, _]} = MotorController.measure(state, world(0.5), 10)
       assert Decimal.equal?(status["motor_current"], Decimal.new("-4.0"))
+    end
+
+    test "reports the speed loop's current" do
+      state = command("vesc_set_rpm", %{"erpm" => round(motor_rpm(1.0) * @pole_pairs)})
+
+      {_state, [{_, "vesc_status", status}, _]} = MotorController.measure(state, world(0.0), 10)
+      assert Decimal.equal?(status["motor_current"], Decimal.new("20.0"))
+    end
+
+    test "turns the motor and gearbox with the wheels: the rotor's inertia through the ratio squared" do
+      {state, _received, _emitted} =
+        MotorController.init(
+          pole_pairs: @pole_pairs,
+          motor_to_wheel_ratio: @ratio,
+          wheel_torque_per_ampere_nm: @torque_per_ampere,
+          max_current_a: 20.0,
+          speed_loop_gain_nm_s_m: 2.0,
+          driven_wheels: WorldState.wheels(),
+          rotor_inertia_kg_m2: 0.001
+        )
+
+      assert_in_delta efforts(state, world(0.0)).driveline_inertia_kg_m2,
+                      0.001 * @ratio * @ratio,
+                      1.0e-12
+    end
+
+    test "set_current is held to its current limit" do
+      state = command("vesc_set_current", %{"current" => Decimal.new("50.0")})
+
+      assert_in_delta efforts(state, world(0.0)).drive_torque_nm, @max_torque, 1.0e-9
+    end
+
+    test "on the OVCS Mini's flat ground, set_rpm reaches its speed against the rolling resistance" do
+      # The Mini: 2.41 kg on 0.0522 m wheels, rolling resistance of 4 A at 0.5 m/s² per ampere.
+      torque_per_ampere = 2.41 * 0.5 * @wheel_radius
+      speed_gain = 2.41 * @wheel_radius / 0.25
+
+      {state, _received, _emitted} =
+        MotorController.init(
+          pole_pairs: @pole_pairs,
+          motor_to_wheel_ratio: @ratio,
+          min_erpm: 300,
+          wheel_torque_per_ampere_nm: torque_per_ampere,
+          max_current_a: 20.0,
+          speed_loop_gain_nm_s_m: speed_gain,
+          driven_wheels: WorldState.wheels()
+        )
+
+      state =
+        MotorController.handle_frame(
+          "vesc_set_rpm",
+          signals(%{"erpm" => round(motor_rpm(0.5) * @pole_pairs)}),
+          state,
+          0
+        )
+
+      ground =
+        SimulatorCore.FlatGround.new(%{
+          wheelbase_m: 0.324,
+          wheel_radius_m: @wheel_radius,
+          mass_kg: 2.41,
+          rolling_deceleration_m_s2: 2.0
+        })
+
+      {_state, ground} =
+        Enum.reduce(1..500, {state, ground}, fn tick, {state, ground} ->
+          now_ms = tick * 20
+          world = SimulatorCore.FlatGround.world_state(ground)
+          efforts = Efforts.combine(MotorController.efforts(state, world, now_ms), 0.0)
+          ground = SimulatorCore.FlatGround.step(ground, efforts, 0.02)
+
+          {state, _updates} =
+            MotorController.measure(state, SimulatorCore.FlatGround.world_state(ground), now_ms)
+
+          # The VMS resends its request well within the command timeout.
+          state = %{state | command_at_ms: now_ms}
+          {state, ground}
+        end)
+
+      assert_in_delta ground.speed_m_s, 0.5, 0.025
     end
 
     test "the tachometer wraps as a signed 32-bit counter" do
       state = %{vesc() | tachometer: 2_147_483_647.0 + 10}
 
       {_state, [_, {_, "vesc_status_5", status_5}]} =
-        MotorController.report(state, vehicle(0.0), 0)
+        MotorController.measure(state, world(0.0), 0)
 
       assert status_5["tachometer"] == -2_147_483_639
     end
 
     test "the motor is released once commands stop for the timeout" do
-      current = Decimal.new("8.0")
+      state = command("vesc_set_current", %{"current" => Decimal.new("8.0")})
 
-      state =
-        MotorController.handle_frame(
-          "vesc_set_current",
-          signals(%{"current" => current}),
-          vesc(),
-          0
-        )
-
-      assert [{:acceleration, _}] = MotorController.actuations(state, vehicle(0.0), 500)
-      assert MotorController.actuations(state, vehicle(0.0), 1_500) == []
+      assert efforts(state, world(0.0), 500).drive_torque_nm > 0.0
+      assert efforts(state, world(0.0), 1_500) == %Efforts{}
     end
 
     test "the tachometer reads back as the motor's rotation through the VMS's arithmetic" do
       speed = 0.8
       steps = 20
+      step_rad = speed * @dt / @wheel_radius
 
-      moving = %{
-        vehicle(speed)
-        | wheel_turns_step: speed * @dt / (2 * :math.pi() * @wheel_radius)
-      }
-
-      {state, _} =
-        Enum.reduce(1..steps, {vesc(), []}, fn _, {state, _} ->
-          MotorController.report(state, moving, 0)
+      state =
+        Enum.reduce(0..steps, vesc(), fn step, state ->
+          {state, _} = MotorController.measure(state, world(speed, step * step_rad), 0)
+          state
         end)
 
       # `MotorController.revolutions/2`: six steps per electrical turn.
@@ -115,7 +223,7 @@ defmodule SimulatorCore.SimulatedComponentsTest do
 
     test "the erpm reads back as the motor's rpm" do
       # `MotorController.rotation_per_minute/2`.
-      rpm = MotorController.erpm(vesc(), vehicle(1.0)) / @pole_pairs
+      rpm = MotorController.erpm(vesc(), world(1.0)) / @pole_pairs
       assert_in_delta rpm, motor_rpm(1.0), 1.0
     end
   end

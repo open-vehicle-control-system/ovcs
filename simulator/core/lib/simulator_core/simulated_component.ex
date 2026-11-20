@@ -4,14 +4,21 @@ defmodule SimulatorCore.SimulatedComponent do
   `SimulatorCore.Hardware`: a motor controller, a generic
   controller, a steering servo, a radio receiver.
 
-  A simulated component reads the frames the VMS sends it, acts on
-  `SimulatorCore.Vehicle` through actuations, and reports what
-  the real hardware would from the vehicle's motion. It is the inverse
-  of the VMS component that drives the same hardware, is named after
-  it, and reads that component's frames by the same names.
+  A simulated component reads the frames the VMS sends it, acts on the
+  vehicle through efforts (`SimulatorCore.Efforts`) the world's dynamics
+  model integrates, and measures the world's state
+  (`SimulatorCore.WorldState`) as the hardware it stands in for would:
+  each wheel's angle and spin, the body's motion. It is the inverse of
+  the VMS component that drives the same hardware, is named after it,
+  and reads that component's frames by the same names.
+
+  A component not yet moved to `efforts/3` and `measure/3` acts through
+  `actuations/3` and reports through `report/3`, which
+  `SimulatorCore.SimulatedComponent.Legacy` runs on the same loop.
   """
 
-  alias SimulatorCore.Vehicle
+  alias SimulatorCore.{Efforts, WorldState}
+  alias SimulatorCore.SimulatedComponent.Legacy
 
   @typedoc "A frame on a network, as the bridge firmware's topology names it."
   @type frame :: {network :: atom(), frame_name :: String.t()}
@@ -19,12 +26,18 @@ defmodule SimulatorCore.SimulatedComponent do
   @typedoc "Signal values to merge into an emitted frame."
   @type update :: {network :: atom(), frame_name :: String.t(), signals :: map()}
 
-  @typedoc "See `SimulatorCore.Vehicle`."
-  @type actuation ::
-          {:acceleration, float()}
-          | {:deceleration, float()}
-          | {:speed, float()}
-          | {:steering, float()}
+  @typedoc """
+  What `SimulatorCore.Hardware` hands the components in one tick: the
+  world's state, the motion `Legacy` derives from it, and the vehicle's
+  mass and wheel radius, through which `Legacy` turns old actuations
+  into efforts.
+  """
+  @type tick :: %{
+          world: WorldState.t(),
+          motion: Legacy.motion(),
+          mass_kg: float(),
+          wheel_radius_m: float()
+        }
 
   @doc """
   The simulated component's initial state, the frames it reads, and the frames it
@@ -42,19 +55,32 @@ defmodule SimulatorCore.SimulatedComponent do
             ) ::
               term()
 
-  @doc "How the simulated component acts on the vehicle this tick."
-  @callback actuations(state :: term(), Vehicle.t(), now_ms :: integer()) :: [actuation()]
+  @doc """
+  The efforts the simulated component applies this tick, from the
+  world's state as it last reported it.
+  """
+  @callback efforts(state :: term(), WorldState.t(), now_ms :: integer()) ::
+              [Efforts.actuation()]
 
   @doc """
-  Reports the vehicle's motion over the last tick as the hardware it
-  stands in for would: the new state and the signals to emit, counters
-  from `wheel_turns_step` and rates from `measured_speed_m_s`; see
-  `SimulatorCore.Vehicle`.
+  Measures the world's state as the hardware it stands in for would:
+  the new state and the signals to emit.
   """
-  @callback report(state :: term(), Vehicle.t(), now_ms :: integer()) ::
+  @callback measure(state :: term(), WorldState.t(), now_ms :: integer()) ::
               {term(), [update()]}
 
-  @optional_callbacks handle_frame: 4, actuations: 3, report: 3
+  @doc "How a component not yet on `efforts/3` acts on the vehicle this tick."
+  @callback actuations(state :: term(), Legacy.motion(), now_ms :: integer()) ::
+              [Legacy.actuation()]
+
+  @doc """
+  How a component not yet on `measure/3` reports the vehicle's motion:
+  counters from `wheel_turns_step`, rates from `measured_speed_m_s`.
+  """
+  @callback report(state :: term(), Legacy.motion(), now_ms :: integer()) ::
+              {term(), [update()]}
+
+  @optional_callbacks handle_frame: 4, efforts: 3, measure: 3, actuations: 3, report: 3
 
   @typedoc "A running simulated component, as `SimulatorCore.Hardware` holds it."
   @type running :: %{module: module(), state: term(), received: MapSet.t(frame())}
@@ -95,26 +121,43 @@ defmodule SimulatorCore.SimulatedComponent do
       else: running
   end
 
-  @doc "The component's actuations this tick, none if it drives nothing."
-  def actuations(running, vehicle, now_ms) do
-    if function_exported?(running.module, :actuations, 3),
-      do: running.module.actuations(running.state, vehicle, now_ms),
-      else: []
+  @doc "The component's efforts this tick, none if it drives nothing."
+  @spec efforts(running(), tick(), integer()) :: [Efforts.actuation()]
+  def efforts(running, tick, now_ms) do
+    cond do
+      function_exported?(running.module, :efforts, 3) ->
+        running.module.efforts(running.state, tick.world, now_ms)
+
+      function_exported?(running.module, :actuations, 3) ->
+        running.module.actuations(running.state, tick.motion, now_ms)
+        |> Legacy.efforts(tick.mass_kg, tick.wheel_radius_m)
+
+      true ->
+        []
+    end
   end
 
-  @doc "Emits what the component reports, if it reports anything."
-  def report(running, vehicle, now_ms) do
-    if function_exported?(running.module, :report, 3) do
-      {state, updates} = running.module.report(running.state, vehicle, now_ms)
+  @doc "Emits what the component measures, if it measures anything."
+  @spec measure(running(), tick(), integer()) :: running()
+  def measure(running, tick, now_ms) do
+    cond do
+      function_exported?(running.module, :measure, 3) ->
+        emit(running, running.module.measure(running.state, tick.world, now_ms))
 
-      Enum.each(updates, fn {network, frame_name, signals} ->
-        :ok = Cantastic.Emitter.update(network, frame_name, &Map.merge(&1, signals))
-      end)
+      function_exported?(running.module, :report, 3) ->
+        emit(running, running.module.report(running.state, tick.motion, now_ms))
 
-      %{running | state: state}
-    else
-      running
+      true ->
+        running
     end
+  end
+
+  defp emit(running, {state, updates}) do
+    Enum.each(updates, fn {network, frame_name, signals} ->
+      :ok = Cantastic.Emitter.update(network, frame_name, &Map.merge(&1, signals))
+    end)
+
+    %{running | state: state}
   end
 
   @doc "A signal's value as a float, whether Cantastic decoded it as a `Decimal` or a number."

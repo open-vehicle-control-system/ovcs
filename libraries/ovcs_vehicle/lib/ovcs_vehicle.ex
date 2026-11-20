@@ -55,8 +55,8 @@ defmodule OvcsVehicle do
   @typedoc """
   The vehicle's simulated hardware, as the simulator runner runs it:
 
-    * `:vehicle` — `SimulatorCore.Vehicle.new/1`'s parameters, the
-      motion model the simulated components act on;
+    * `:vehicle` — `SimulatorCore.FlatGround.new/1`'s parameters: the
+      vehicle's mass and dimensions, for the world that moves it;
     * `:simulated_components` — `{module, opts}` per simulated
       component, each implementing `SimulatorCore.SimulatedComponent`;
     * `:can_config_path` — the CAN topology of the frames they read

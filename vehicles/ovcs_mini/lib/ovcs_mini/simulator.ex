@@ -15,14 +15,22 @@ defmodule OvcsMini.Simulator do
   alias OvcsMini.Vms.Composer
   alias SimulatorCore.SimulatedComponents, as: Simulated
 
+  # The URDF's total mass.
+  @mass_kg 2.41
   # Not measured: plausible figures for a 1/10 truck on a 2S pack.
   @battery_voltage 7.4
   @acceleration_per_ampere 0.5
+  @vesc_speed_time_constant_s 0.25
   # The Mini's VESC Tool setting, see docs/vms/drivers.md.
   @vesc_minimum_erpm 300
+  # Shaft-driven 4WD: the motor turns with all four wheels.
+  @driven_wheels [:front_left, :front_right, :rear_left, :rear_right]
 
   @doc "The acceleration a simulated ampere of motor current gives, in m/s² per ampere."
   def acceleration_per_ampere, do: @acceleration_per_ampere
+
+  @doc "The simulated vehicle's mass, in kg."
+  def mass_kg, do: @mass_kg
 
   @doc "`t:OvcsVehicle.simulator/0` for the OVCS Mini."
   @spec simulator() :: OvcsVehicle.simulator()
@@ -36,6 +44,7 @@ defmodule OvcsMini.Simulator do
       vehicle: %{
         wheelbase_m: geometry.wheelbase,
         wheel_radius_m: geometry.wheel_radius,
+        mass_kg: @mass_kg,
         # Friction is the motor current the Mini needs to start rolling.
         rolling_deceleration_m_s2: drivetrain.min_motor_current * @acceleration_per_ampere
       },
@@ -44,7 +53,10 @@ defmodule OvcsMini.Simulator do
          pole_pairs: drivetrain.pole_pairs,
          motor_to_wheel_ratio: drivetrain.motor_to_wheel_ratio,
          min_erpm: @vesc_minimum_erpm,
-         acceleration_per_ampere: @acceleration_per_ampere,
+         wheel_torque_per_ampere_nm: @mass_kg * @acceleration_per_ampere * geometry.wheel_radius,
+         max_current_a: drivetrain.max_motor_current,
+         speed_loop_gain_nm_s_m: @mass_kg * geometry.wheel_radius / @vesc_speed_time_constant_s,
+         driven_wheels: @driven_wheels,
          input_voltage: @battery_voltage},
         {Simulated.OVCS.GenericController,
          analog_pins: %{1 => pm12s3_reading(@battery_voltage)},

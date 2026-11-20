@@ -11,10 +11,12 @@ You need your vehicle's VMS running on the host first: see [Quickstart](../quick
 
 | Part | Module | What it does |
 |---|---|---|
-| Simulated components | `SimulatorCore.SimulatedComponent` | One per piece of hardware the VMS drives. Each reads the frames the VMS sends that part, acts on the vehicle's motion, and emits the frames the part would send. |
-| Motion model | `SimulatorCore.Vehicle` | The vehicle's speed, steering angle and wheel turns, from the simulated components' actuations. It knows no hardware. |
-| Loop | `SimulatorCore.Hardware` | Every 20 ms: collects the actuations, steps the motion model, lets each simulated component report, and hands the motion to the world. |
-| World | `SimulatorCore.World` | What moves the vehicle and measures its wheels. The Gazebo world is `RosBridge.Simulator.World`. |
+| Simulated components | `SimulatorCore.SimulatedComponent` | One per piece of hardware the VMS drives. Each reads the frames the VMS sends that part, acts on the vehicle through efforts, and emits the frames the part would send from what the world reports. |
+| Efforts | `SimulatorCore.Efforts` | What the simulated components ask of the vehicle each tick: drive torque at the driven wheels, brake torque, the front wheels' angle, the driveline's inertia. |
+| World state | `SimulatorCore.WorldState` | What the world reports: each wheel's angle, spin and contact with the ground, and the body's motion. The simulated components measure it as the vehicle's sensors would. |
+| Loop | `SimulatorCore.Hardware` | Every 20 ms: combines the simulated components' efforts, hands them to the world, and lets each simulated component report the world's state. |
+| World | `SimulatorCore.World` | The behaviour of an external simulator that moves the vehicle from the efforts and reports its state. The Gazebo world is `RosBridge.Simulator.World`. |
+| Flat ground | `SimulatorCore.FlatGround` | The model that moves the vehicle when no external simulator does: wheels that never slip, on flat ground. |
 
 Everything except the Gazebo world lives in `simulator/core/`, which knows nothing about ROS.
 
@@ -26,10 +28,10 @@ The simulator runs on the host only, in one of two places:
 
 | Where | Started by | Moves the vehicle |
 |---|---|---|
-| The simulator runner, `simulator/runner/`, a BEAM of its own | `./ovcs run <vehicle> --simulate` | `SimulatorCore.Vehicle`, with no world |
+| The simulator runner, `simulator/runner/`, a BEAM of its own | `./ovcs run <vehicle> --simulate` | `SimulatorCore.FlatGround`, with no world |
 | Your vehicle's `ros` bridge | your vehicle's own switch, `OVCS_SIM=1` on the OVCS Mini reference vehicle | Gazebo, through `RosBridge.Simulator.World` |
 
-The runner reads your vehicle's `simulator/0`: the motion model's parameters, the simulated components, and the CAN topology and host mapping of their frames. `OvcsVehicle` documents its fields. The OVCS Mini reference vehicle's is in `vehicles/ovcs_mini/lib/ovcs_mini.ex`.
+The runner reads your vehicle's `simulator/0`: the vehicle's mass and dimensions, the simulated components, and the CAN topology and host mapping of their frames. `OvcsVehicle` documents its fields. The OVCS Mini reference vehicle's is in `vehicles/ovcs_mini/lib/ovcs_mini.ex`.
 
 In the `ros` bridge, the bridge's host configuration lists a `:simulated_hardware` component, and its host CAN topology declares the simulated hardware's frames. On the vehicle, neither exists.
 

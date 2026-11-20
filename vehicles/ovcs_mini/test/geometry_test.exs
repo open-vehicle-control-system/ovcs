@@ -64,6 +64,10 @@ defmodule OvcsMini.GeometryTest do
       assert xacro_property("simulated_acceleration_per_ampere") ==
                OvcsMini.Simulator.acceleration_per_ampere()
     end
+
+    test "the mass is the simulated hardware's" do
+      assert xacro_property("total_mass") == OvcsMini.Simulator.mass_kg()
+    end
   end
 
   describe "the ROS 2 nodes stamp the URDF's links" do

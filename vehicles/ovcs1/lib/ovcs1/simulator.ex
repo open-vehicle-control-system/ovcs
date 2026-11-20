@@ -16,7 +16,6 @@ defmodule Ovcs1.Simulator do
 
   @simulated_networks ~w(ovcs misc leaf_drive polo_drive)
 
-  @max_speed_m_s 25.0
   @mass_kg 1_300.0
   @pack_voltage_v 360
   # The Leaf motor drives the Polo's 02R gearbox through a coupling, with no Leaf reducer.
@@ -42,7 +41,7 @@ defmodule Ovcs1.Simulator do
       vehicle: %{
         wheelbase_m: Ovcs1.geometry().wheelbase,
         wheel_radius_m: Ovcs1.geometry().wheel_radius,
-        max_speed_m_s: @max_speed_m_s
+        mass_kg: @mass_kg
       },
       simulated_components: generic_controllers() ++ parts()
     }

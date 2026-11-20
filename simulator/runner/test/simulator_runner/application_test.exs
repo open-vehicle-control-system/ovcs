@@ -14,7 +14,7 @@ defmodule SimulatorRunner.ApplicationTest do
 
   setup do
     Application.put_env(:simulator_runner, :simulator, %{
-      vehicle: %{wheelbase_m: 0.324, wheel_radius_m: 0.0522},
+      vehicle: %{wheelbase_m: 0.324, wheel_radius_m: 0.0522, mass_kg: 2.41},
       simulated_components: [{Idle, []}],
       can_config_path: "can/simulator.yml",
       can_mapping: "ovcs:vcan0"
